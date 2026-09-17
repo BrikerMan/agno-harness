@@ -1,0 +1,9 @@
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_STARTED"}
+{"tool_call_id": "<id>", "tool_call_name": "get_weather", "type": "TOOL_CALL_START"}
+{"delta": "{\"city\": \"Tokyo\"}", "tool_call_id": "<id>", "type": "TOOL_CALL_ARGS"}
+{"tool_call_id": "<id>", "type": "TOOL_CALL_END"}
+{"content": "{\"tempC\": 22}", "message_id": "<id>", "role": "tool", "tool_call_id": "<id>", "type": "TOOL_CALL_RESULT"}
+{"message_id": "<id>", "role": "assistant", "type": "TEXT_MESSAGE_START"}
+{"delta": "It is 22 degrees in Tokyo.", "message_id": "<id>", "type": "TEXT_MESSAGE_CONTENT"}
+{"message_id": "<id>", "type": "TEXT_MESSAGE_END"}
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_FINISHED"}

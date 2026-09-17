@@ -1,0 +1,10 @@
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_STARTED"}
+{"message_id": "<id>", "role": "assistant", "type": "TEXT_MESSAGE_START"}
+{"delta": "Here are the stats:\n\n", "message_id": "<id>", "type": "TEXT_MESSAGE_CONTENT"}
+{"name": "ui.block.start", "type": "CUSTOM", "value": {"blockId": "<id>", "body": "items", "index": 0, "messageId": "<id>", "props": {}, "schema": "demo-card"}}
+{"name": "ui.item", "type": "CUSTOM", "value": {"blockId": "<id>", "data": {"label": "Stars", "type": "stat", "value": "15.2k"}, "index": 0, "messageId": "<id>", "schema": "demo-card"}}
+{"name": "ui.item", "type": "CUSTOM", "value": {"blockId": "<id>", "data": {"text": "Updated hourly.", "type": "note"}, "index": 1, "messageId": "<id>", "schema": "demo-card"}}
+{"name": "ui.block.end", "type": "CUSTOM", "value": {"blockId": "<id>", "messageId": "<id>", "total": 2, "truncated": false}}
+{"delta": "Anything else?", "message_id": "<id>", "type": "TEXT_MESSAGE_CONTENT"}
+{"message_id": "<id>", "type": "TEXT_MESSAGE_END"}
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_FINISHED"}

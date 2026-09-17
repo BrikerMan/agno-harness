@@ -1,0 +1,10 @@
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_STARTED"}
+{"message_id": "<id>", "type": "REASONING_START"}
+{"message_id": "<id>", "role": "reasoning", "type": "REASONING_MESSAGE_START"}
+{"delta": "Let me think. ", "message_id": "<id>", "type": "REASONING_MESSAGE_CONTENT"}
+{"message_id": "<id>", "type": "REASONING_MESSAGE_END"}
+{"message_id": "<id>", "type": "REASONING_END"}
+{"message_id": "<id>", "role": "assistant", "type": "TEXT_MESSAGE_START"}
+{"delta": "The answer.", "message_id": "<id>", "type": "TEXT_MESSAGE_CONTENT"}
+{"message_id": "<id>", "type": "TEXT_MESSAGE_END"}
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_FINISHED"}

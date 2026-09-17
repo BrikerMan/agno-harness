@@ -1,0 +1,6 @@
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_STARTED"}
+{"message_id": "<id>", "role": "assistant", "type": "TEXT_MESSAGE_START"}
+{"delta": "Hello, ", "message_id": "<id>", "type": "TEXT_MESSAGE_CONTENT"}
+{"delta": "world.", "message_id": "<id>", "type": "TEXT_MESSAGE_CONTENT"}
+{"message_id": "<id>", "type": "TEXT_MESSAGE_END"}
+{"run_id": "run-1", "thread_id": "thread-1", "type": "RUN_FINISHED"}

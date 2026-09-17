@@ -1,0 +1,126 @@
+[project]
+name = "agno-relay"
+version = "0.1.0"
+description = "Universal Multi-Channel Production Gateway for AGNO Agents: Web, Teams, Lark, CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Eliyar Eziz" }]
+keywords = ["agno", "agent", "teams", "lark", "feishu", "ag-ui", "gateway", "multi-channel"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+    "agno>=2.8.7",
+    "ag-ui-protocol>=0.1.19",
+    "httpx>=0.27",
+    "jsonpatch>=1.33",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.7",
+    "rich>=13.9",
+    "typer>=0.16",
+    "tiktoken>=0.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+fastapi = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+]
+teams = [
+    "microsoft-agents-activity>=1.0.0",
+    "microsoft-agents-hosting-core>=1.0.0",
+    "microsoft-agents-hosting-aiohttp>=1.0.0",
+    "microsoft-agents-authentication-msal>=1.0.0",
+]
+lark = [
+    "lark-oapi>=1.2.0",
+    "websockets>=12.0",
+]
+sqlite = [
+    "aiosqlite>=0.20",
+    "sqlalchemy[asyncio]>=2.0.30",
+]
+postgres = [
+    "asyncpg>=0.30",
+    "sqlalchemy[asyncio]>=2.0.30",
+]
+redis = [
+    "redis>=5.0",
+]
+otel = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "openinference-instrumentation-agno>=0.1.29",
+]
+all = [
+    "agno-relay[fastapi,teams,lark,sqlite,postgres,redis,otel]",
+]
+
+[project.scripts]
+agno-relay = "agno_relay.cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agno_relay"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "aiosqlite>=0.20",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "fastapi[standard]>=0.115",
+    "websockets>=12.0",
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
+    "openinference-instrumentation-agno>=0.1.29",
+    "openai>=1.50",
+    "redis>=5.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: end-to-end tests that call real APIs",
+    "teams: tests requiring Teams SDK",
+    "lark: tests requiring Lark SDK",
+    "postgres: tests requiring PostgreSQL",
+    "redis: tests requiring Redis",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = ["B008", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+ignore_missing_imports = true
+warn_unused_ignores = false
+disallow_untyped_defs = false
