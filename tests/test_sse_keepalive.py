@@ -6,9 +6,9 @@ import asyncio
 
 import pytest
 
-from agno_relay.runtime.replay import thread_summary_from_session
-from agno_relay.runtime.threads import ThreadService
-from agno_relay.transport.router import SSE_PING_FRAME, _with_sse_ping
+from agno_harness.runtime.replay import thread_summary_from_session
+from agno_harness.runtime.threads import ThreadService
+from agno_harness.transport.router import SSE_PING_FRAME, _with_sse_ping
 
 from .test_replay import FakeDb, FakeInput, FakeRun, FakeSession
 

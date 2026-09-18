@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from ag_ui.core import CustomEvent, TextMessageContentEvent
 
-from agno_relay.core.channel import ConversationKey
-from agno_relay.core.streamui.schema import BlockSchema, CardCatalog, ItemSchema
-from agno_relay.sessions.manager import InMemorySessionStore, SessionManager
-from agno_relay.stream.buffer import ThrottledStreamBuffer
-from agno_relay.stream.collector import MessageCollector
+from agno_harness.core.channel import ConversationKey
+from agno_harness.core.streamui.schema import BlockSchema, CardCatalog, ItemSchema
+from agno_harness.sessions.manager import InMemorySessionStore, SessionManager
+from agno_harness.stream.buffer import ThrottledStreamBuffer
+from agno_harness.stream.collector import MessageCollector
 
 # --- Session Tests ---
 

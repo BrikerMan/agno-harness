@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agno_relay import (
+from agno_harness import (
     BlockSchema,
     CardCatalog,
     ItemSchema,

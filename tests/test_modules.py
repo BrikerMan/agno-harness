@@ -18,13 +18,13 @@ from __future__ import annotations
 import pytest
 from ag_ui.core import BaseEvent, CustomEvent, EventType
 
-from agno_relay import AguiRuntime, SequencerMode
-from agno_relay.runtime.module import Module, ModuleConflict, ModuleRegistry
-from agno_relay.runtime.modules.custom_events import CustomEventsModule
-from agno_relay.runtime.modules.streamui import StreamUIModule
-from agno_relay.runtime.modules.subagent import SubAgentModule
-from agno_relay.runtime.translator import make_run_scope
-from agno_relay.stores import InMemoryCustomEventStore, Stores
+from agno_harness import AgentRuntime, SequencerMode
+from agno_harness.runtime.module import Module, ModuleConflict, ModuleRegistry
+from agno_harness.runtime.modules.custom_events import CustomEventsModule
+from agno_harness.runtime.modules.streamui import StreamUIModule
+from agno_harness.runtime.modules.subagent import SubAgentModule
+from agno_harness.runtime.translator import make_run_scope
+from agno_harness.stores import InMemoryCustomEventStore, Stores
 
 from .conformance import assert_valid_agui_sequence
 from .conftest import FakeAgent, collect, content, customs, make_input, run_completed, types_of
@@ -70,12 +70,12 @@ class TestRegistryConflicts:
         assert registry.owner_of("billing") is None
 
     def test_the_built_in_modules_do_not_conflict(self):
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]))
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]))
         names = [m.name for m in runtime.modules]
         assert names == ["subagent", "tool_filters", "streamui", "custom_events"]
 
     def test_a_registered_module_cannot_squat_a_built_in_namespace(self):
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]))
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]))
         with pytest.raises(ModuleConflict):
             runtime.register_module(named("mine", "ui."))
 
@@ -156,7 +156,7 @@ class TestPerRunState:
 class TestCustomEventPersistence:
     async def test_an_unclaimed_custom_event_is_saved(self):
         stores = Stores(custom_events=InMemoryCustomEventStore())
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([run_completed()]),
             stores=stores,
             sequencer_mode=SequencerMode.AUDIT,
@@ -174,7 +174,7 @@ class TestCustomEventPersistence:
     async def test_a_claimed_custom_event_is_left_to_its_owner(self):
         """UI blocks are rebuilt from the text, so a generic save would duplicate."""
         stores = Stores(custom_events=InMemoryCustomEventStore())
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(
                 [
                     content('```stream-ui {"schema": "demo-card"}\n{"kind":"card"}\n```\n'),
@@ -191,7 +191,7 @@ class TestCustomEventPersistence:
 
     async def test_no_store_degrades_to_live_only(self):
         """A missing store is a configuration, not an error."""
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([run_completed()]), sequencer_mode=SequencerMode.AUDIT
         )
 
@@ -227,7 +227,7 @@ class TestBracketsAlwaysClose:
     """Every module closes what it opened, even when the run dies mid-way."""
 
     async def test_a_run_that_dies_inside_a_block_still_closes_it(self):
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             # The fence opens and the model never finishes it, because the
             # stream raises instead of producing the closing ```.
             agent=FakeAgent(
@@ -244,7 +244,7 @@ class TestBracketsAlwaysClose:
         assert end and end[0].value["truncated"] is True
 
     async def test_a_run_that_dies_inside_a_delegation_still_closes_the_panel(self):
-        from agno_relay import substream
+        from agno_harness import substream
 
         class DelegatingAgent(FakeAgent):
             async def _stream(self):
@@ -252,7 +252,7 @@ class TestBracketsAlwaysClose:
                 async with substream("reviewer", description="checking"):
                     raise RuntimeError("model exploded")
 
-        runtime = AguiRuntime(agent=DelegatingAgent([]), sequencer_mode=SequencerMode.AUDIT)
+        runtime = AgentRuntime(agent=DelegatingAgent([]), sequencer_mode=SequencerMode.AUDIT)
         events = await collect(runtime.stream_events(make_input()))
 
         assert types_of(events)[-1] == "RUN_ERROR"
@@ -261,7 +261,7 @@ class TestBracketsAlwaysClose:
         assert end and end[0].value["interrupted"] is True
 
     async def test_a_healthy_run_is_balanced_too(self):
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(
                 [
                     content('```stream-ui {"schema": "demo-card"}\n{"kind":"card"}\n```\ndone'),

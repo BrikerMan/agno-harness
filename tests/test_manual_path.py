@@ -16,13 +16,13 @@ import json
 from ag_ui.core import CustomEvent, EventType
 from agno.run.agent import RunErrorEvent as AgnoRunError
 
-from agno_relay import (
+from agno_harness import (
     AgentRunner,
     EventTranslator,
     SequencerMode,
     make_run_scope,
 )
-from agno_relay.runtime.translator import AgentRunFailed, _repair_ascii_json
+from agno_harness.runtime.translator import AgentRunFailed, _repair_ascii_json
 
 from .conformance import assert_valid_agui_sequence
 from .conftest import (

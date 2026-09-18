@@ -6,7 +6,7 @@ no trace: it reads as though a sub-agent answered the parent's question, or —
 the case that gave this module its shape — as though one user's run happened
 inside another's.
 
-Every test drives a real ``AguiRuntime`` against a scripted agent and reads the
+Every test drives a real ``AgentRuntime`` against a scripted agent and reads the
 spans back out of an in-memory exporter, so what is asserted is what a collector
 would have received.
 """
@@ -24,12 +24,12 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import NoOpTracerProvider, StatusCode
 
-from agno_relay import AguiRuntime, ObservabilityModule, SequencerMode, setup_otlp
-from agno_relay.core.streamui import BlockSchema, CardCatalog
+from agno_harness import AgentRuntime, ObservabilityModule, SequencerMode, setup_otlp
+from agno_harness.core.streamui import BlockSchema, CardCatalog
 
 # Not ``as setup_module``: that is a pytest xunit hook name, and pytest would
 # try to call the module.
-from agno_relay.observability import setup as otlp_setup
+from agno_harness.observability import setup as otlp_setup
 
 from .conftest import (
     FakeAgent,
@@ -60,10 +60,10 @@ def provider(exporter: InMemorySpanExporter) -> TracerProvider:
     return provider
 
 
-def build(provider, chunks, *, name="demo", raise_at=None, **kwargs) -> AguiRuntime:
+def build(provider, chunks, *, name="demo", raise_at=None, **kwargs) -> AgentRuntime:
     agent = FakeAgent(chunks, raise_at=raise_at)
     agent.name = name
-    runtime = AguiRuntime(agent=agent, sequencer_mode=SequencerMode.REPAIR)
+    runtime = AgentRuntime(agent=agent, sequencer_mode=SequencerMode.REPAIR)
     runtime.register_module(
         ObservabilityModule(tracer_provider=provider, **kwargs).bind_agent(agent)
     )
@@ -85,7 +85,7 @@ class TestTheRunSpan:
         await collect(runtime.stream_events(make_input()))
 
         finished = exporter.get_finished_spans()
-        assert [span.name for span in finished] == ["demo"]
+        assert [span.name for span in finished] == ["demo.turn-run"]
 
     async def test_the_span_carries_the_identity_a_backend_groups_by(self, provider, exporter):
         runtime = build(provider, [content("hi"), run_completed()])
@@ -136,7 +136,7 @@ class TestTheRunSpan:
         card = '```stream-ui {"schema": "notes"}\n{"text": "hello"}\n```\n'
         agent = FakeAgent([content(card), run_completed()])
         agent.name = "demo"
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=agent,
             catalog=CardCatalog([_Notes]),
             # A card-only answer leaves an empty text message, which STRICT
@@ -198,14 +198,14 @@ class TestNesting:
 
         agent = InstrumentedAgent([content("hi"), content(" there"), run_completed()])
         agent.name = "demo"
-        runtime = AguiRuntime(agent=agent)
+        runtime = AgentRuntime(agent=agent)
         runtime.register_module(ObservabilityModule(tracer_provider=provider).bind_agent(agent))
         await collect(runtime.stream_events(make_input()))
 
         spans = spans_by_name(exporter)
-        assert set(spans) == {"demo", "Agent.run"}
-        assert spans["Agent.run"].parent.span_id == spans["demo"].context.span_id
-        assert spans["Agent.run"].context.trace_id == spans["demo"].context.trace_id
+        assert set(spans) == {"demo.turn-run", "Agent.run"}
+        assert spans["Agent.run"].parent.span_id == spans["demo.turn-run"].context.span_id
+        assert spans["Agent.run"].context.trace_id == spans["demo.turn-run"].context.trace_id
 
     async def test_two_runs_at_once_do_not_nest_inside_each_other(self, provider, exporter):
         """Two roots, two traces, no leakage between them.
@@ -223,9 +223,11 @@ class TestNesting:
         )
 
         spans = spans_by_name(exporter)
-        assert spans["slow"].parent is None
-        assert spans["fast"].parent is None
-        assert spans["slow"].context.trace_id != spans["fast"].context.trace_id
+        slow_span = spans["slow.turn-run"]
+        fast_span = spans["fast.turn-run"]
+        assert slow_span.parent is None
+        assert fast_span.parent is None
+        assert slow_span.context.trace_id != fast_span.context.trace_id
 
     async def test_the_context_does_not_leak_to_whoever_reads_the_stream(self, provider, caplog):
         """A consumer iterating a run must not find itself inside its span."""
@@ -253,7 +255,7 @@ class TestNesting:
 
         agent = InstrumentedAgent([content("a"), content("b"), run_completed()])
         agent.name = "demo"
-        runtime = AguiRuntime(agent=agent)
+        runtime = AgentRuntime(agent=agent)
         runtime.register_module(ObservabilityModule(tracer_provider=provider).bind_agent(agent))
 
         async for _ in runtime.stream_events(make_input()):
@@ -264,11 +266,11 @@ class TestNesting:
 class TestNaming:
     async def test_an_unnamed_agent_falls_back_to_a_fixed_name(self, provider, exporter):
         agent = FakeAgent([run_completed()])
-        runtime = AguiRuntime(agent=agent)
+        runtime = AgentRuntime(agent=agent)
         runtime.register_module(ObservabilityModule(tracer_provider=provider).bind_agent(agent))
         await collect(runtime.stream_events(make_input()))
 
-        assert exporter.get_finished_spans()[0].name == "agui.run"
+        assert exporter.get_finished_spans()[0].name == "agent.turn-run"
 
     async def test_the_name_can_be_computed_per_run(self, provider, exporter):
         """For services routing several conversation kinds through one agent."""
@@ -280,6 +282,14 @@ class TestNaming:
         await collect(runtime.stream_events(make_input(thread_id="g-1")))
 
         assert exporter.get_finished_spans()[0].name == "chat-group"
+
+    def test_turn_run_span_name_slugs_and_does_not_double_suffix(self):
+        from agno_harness.observability.module import turn_run_span_name
+
+        assert turn_run_span_name("movie-assistant") == "movie-assistant.turn-run"
+        assert turn_run_span_name("Movie Bot") == "movie-bot.turn-run"
+        assert turn_run_span_name(None) == "agent.turn-run"
+        assert turn_run_span_name("movie-assistant.turn-run") == "movie-assistant.turn-run"
 
 
 class TestSetup:

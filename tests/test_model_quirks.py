@@ -19,8 +19,8 @@ from dataclasses import dataclass, field
 import pytest
 from ag_ui.core import BaseEvent, EventType
 
-from agno_relay import AguiRuntime, SequencerMode
-from agno_relay.core.streamui import BlockSchema, CardCatalog, ItemSchema
+from agno_harness import AgentRuntime, SequencerMode
+from agno_harness.core.streamui import BlockSchema, CardCatalog, ItemSchema
 
 from .conformance import assert_valid_agui_sequence
 from .conftest import FakeAgent, collect, content, customs, make_input, run_completed
@@ -132,7 +132,7 @@ QUIRKS: dict[str, Quirk] = {
 
 
 async def run(quirk: Quirk) -> list[BaseEvent]:
-    runtime = AguiRuntime(
+    runtime = AgentRuntime(
         agent=FakeAgent(quirk.chunks),
         catalog=catalog(),
         sequencer_mode=SequencerMode.AUDIT,

@@ -13,11 +13,11 @@ import asyncio
 import pytest
 from ag_ui.core import EventType
 
-from agno_relay.core.log import RunStatus
-from agno_relay.runtime.longrun import LongRunError, LongRunManager, RunNotOwned
-from agno_relay.runtime.runtime import AguiRuntime
-from agno_relay.runtime.translator import EVENT_RUN_CANCELLED, EVENT_RUN_PAUSED
-from agno_relay.stores import InMemoryRunEventLog, Stores
+from agno_harness.core.log import RunStatus
+from agno_harness.runtime.longrun import LongRunError, LongRunManager, RunNotOwned
+from agno_harness.runtime.runtime import AgentRuntime
+from agno_harness.runtime.translator import EVENT_RUN_CANCELLED, EVENT_RUN_PAUSED
+from agno_harness.stores import InMemoryRunEventLog, Stores
 from tests.conformance import assert_valid_agui_sequence
 from tests.conftest import (
     FakeAgent,
@@ -34,8 +34,8 @@ def chunks(*texts: str):
     return [content(text) for text in texts] + [run_completed("".join(texts))]
 
 
-def runtime_for(agent: FakeAgent, **kwargs) -> AguiRuntime:
-    return AguiRuntime(agent=agent, record_chunks=0, **kwargs)
+def runtime_for(agent: FakeAgent, **kwargs) -> AgentRuntime:
+    return AgentRuntime(agent=agent, record_chunks=0, **kwargs)
 
 
 def manager_for(agent: FakeAgent, *, log=None, **kwargs) -> LongRunManager:
@@ -280,11 +280,11 @@ class TestAbort:
         assert any(e.get("name") == EVENT_RUN_CANCELLED for e in received)
 
     async def test_aborting_in_flight_archives_run_cancelled_event(self):
-        from agno_relay.stores import InMemoryHistoryArchive
+        from agno_harness.stores import InMemoryHistoryArchive
 
         archive = InMemoryHistoryArchive()
         log = InMemoryRunEventLog()
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=_GatedAgent(asyncio.Event(), chunks("a", "b")),
             stores=Stores(event_log=log, history_archive=archive),
         )

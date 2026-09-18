@@ -13,7 +13,7 @@ from typing import Literal
 
 import pytest
 
-from agno_relay.core.streamui import (
+from agno_harness.core.streamui import (
     EVENT_BLOCK_END,
     EVENT_BLOCK_START,
     EVENT_ITEM,

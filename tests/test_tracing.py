@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from agno_relay import AguiRuntime
-from agno_relay.runtime.tracing import TRACE_DIR_ENV, RunTracer
+from agno_harness import AgentRuntime
+from agno_harness.runtime.tracing import TRACE_DIR_ENV, RunTracer
 
 from .conftest import FakeAgent, content, make_input, run_completed, tool_started
 
@@ -54,7 +54,7 @@ class TestRuntimeTracing:
     @pytest.fixture
     def trace(self, tmp_path):
         async def run(chunks):
-            runtime = AguiRuntime(agent=FakeAgent(chunks), trace_dir=tmp_path)
+            runtime = AgentRuntime(agent=FakeAgent(chunks), trace_dir=tmp_path)
             async for _ in runtime.stream_events(make_input()):
                 pass
             return read(tmp_path / "run-1.jsonl")

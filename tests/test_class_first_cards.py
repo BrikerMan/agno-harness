@@ -1,6 +1,6 @@
 import pytest
 
-from agno_relay.core.streamui.schema import BlockSchema, CardCatalog, CardSchema, ItemSchema
+from agno_harness.core.streamui.schema import BlockSchema, CardCatalog, CardSchema, ItemSchema
 
 
 class CustomMovieItem(ItemSchema):
@@ -149,3 +149,66 @@ def test_card_schema_single_item():
     catalog = CardCatalog([SingleHeroCard])
     teams_out = catalog.render_item("teams", "hero-card", {"title": "Batman", "status": "Active"})
     assert teams_out == {"type": "TextBlock", "text": "Hero: Batman (Active)"}
+
+
+class FeedbackItem(ItemSchema):
+    schema_name = "feedback"
+    rating: int
+
+    @classmethod
+    async def handle_action(cls, action: str, payload, event):
+        if action == "submit":
+            return f"Feedback recorded with score {payload.get('score')}"
+        return None
+
+
+class OrderItem(ItemSchema):
+    schema_name = "order"
+    order_id: str
+
+    @classmethod
+    async def handle_action(cls, action: str, payload, event):
+        if action == "submit":
+            return f"Order submitted for #{payload.get('order_id')}"
+        return None
+
+
+class OrderBlock(BlockSchema):
+    schema_name = "order-block"
+    body = "items"
+    item = OrderItem
+
+
+class FeedbackBlock(BlockSchema):
+    schema_name = "feedback-block"
+    body = "items"
+    item = FeedbackItem
+
+
+@pytest.mark.asyncio
+async def test_class_first_namespaced_action_dispatch_no_conflicts():
+    catalog = CardCatalog([OrderBlock, FeedbackBlock])
+
+    # 1. Dispatching 'submit' namespaced with 'feedback:submit'
+    res_feedback = await catalog.dispatch_action(
+        action_id="feedback:submit",
+        payload={"score": 5},
+        event=None,
+    )
+    assert res_feedback == "Feedback recorded with score 5"
+
+    # 2. Dispatching 'submit' namespaced with 'order:submit' (same verb 'submit', zero collision!)
+    res_order = await catalog.dispatch_action(
+        action_id="order:submit",
+        payload={"order_id": "ORD-999"},
+        event=None,
+    )
+    assert res_order == "Order submitted for #ORD-999"
+
+    # 3. Dispatching via schema in payload
+    res_direct = await catalog.dispatch_action(
+        action_id="submit",
+        payload={"schema": "feedback", "score": 10},
+        event=None,
+    )
+    assert res_direct == "Feedback recorded with score 10"

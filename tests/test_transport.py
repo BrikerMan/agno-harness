@@ -9,12 +9,12 @@ from ag_ui.core import EventType
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agno_relay import AguiRuntime, SequencerMode, make_agui_router
-from agno_relay.core.debug import EVENT_DEBUG_SUMMARY
-from agno_relay.core.protocol import WIRE_PROTOCOL_VERSION
-from agno_relay.runtime.longrun import LongRunManager
-from agno_relay.stores import InMemoryRunEventLog, Stores
-from agno_relay.transport.router import (
+from agno_harness import AgentRuntime, SequencerMode, make_agui_router
+from agno_harness.core.debug import EVENT_DEBUG_SUMMARY
+from agno_harness.core.protocol import WIRE_PROTOCOL_VERSION
+from agno_harness.runtime.longrun import LongRunManager
+from agno_harness.stores import InMemoryRunEventLog, Stores
+from agno_harness.transport.router import (
     PROTOCOL_HEADER,
     RESUME_HEADER,
     SSE_HEADERS,
@@ -26,12 +26,13 @@ from .test_replay import FakeDb, FakeInput, FakeRun, FakeSession
 
 
 def make_client(chunks=None, db=None, **kwargs):
-    runtime = AguiRuntime(
+    runtime = AgentRuntime(
         agent=FakeAgent(chunks if chunks is not None else [content("hi"), run_completed()]),
         db=db,
         sequencer_mode=SequencerMode.AUDIT,
     )
     app = FastAPI()
+    kwargs.setdefault("allow_anonymous", True)
     app.include_router(make_agui_router(runtime, **kwargs))
     return TestClient(app), runtime
 
@@ -185,7 +186,7 @@ class TestLongRunRoutes:
     @staticmethod
     def long_run_client(chunks=None):
         log = InMemoryRunEventLog()
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(chunks if chunks is not None else [content("hi"), run_completed()]),
             stores=Stores(event_log=log),
             sequencer_mode=SequencerMode.AUDIT,
@@ -291,7 +292,7 @@ class TestLongRunRoutes:
 
     def test_active_run_includes_user_input(self):
         log = InMemoryRunEventLog()
-        runtime = AguiRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
         manager = LongRunManager(runtime, log=log)
         app = FastAPI()
         app.include_router(make_agui_router(runtime, long_runs=manager))
@@ -314,7 +315,7 @@ class TestLongRunRoutes:
     def test_another_users_run_is_a_404_and_not_a_403(self):
         """403 would confirm the run exists, which is more than a stranger knew."""
         log = InMemoryRunEventLog()
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]), stores=Stores(event_log=log))
         manager = LongRunManager(runtime, log=log)
         app = FastAPI()
         users = iter(["alice", "bob"])
@@ -342,7 +343,7 @@ class TestDetachedStreaming:
         Both parameters matter, and the second one more: a log that cannot tail
         is the demo's default, and it is the one that was broken.
         """
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([content("hello "), content("there"), run_completed()]),
             stores=Stores(event_log=log),
         )
@@ -360,7 +361,7 @@ class TestDetachedStreaming:
 
     def test_every_frame_carries_the_offset_a_client_resumes_from(self):
         log = InMemoryRunEventLog()
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([content("hi"), run_completed()]), stores=Stores(event_log=log)
         )
         app = FastAPI()
@@ -387,7 +388,7 @@ class TestFramesRoute:
         )
 
     def test_a_hot_layer_alone_is_replayable(self):
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([run_completed()]), stores=Stores(event_log=InMemoryRunEventLog())
         )
         app = FastAPI()
@@ -420,7 +421,7 @@ class TestConfiguration:
         assert client.post("/agui", json=_payload()).status_code == 404
 
     def test_the_user_id_is_resolved_server_side(self):
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]))
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]))
         app = FastAPI()
         app.include_router(
             make_agui_router(runtime, resolve_user_id=lambda request: "user-from-header")

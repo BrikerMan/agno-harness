@@ -8,19 +8,19 @@ import json
 import pytest
 from ag_ui.core import CustomEvent, EventType
 
-from agno_relay import (
-    AguiRuntime,
+from agno_harness import (
+    AgentRuntime,
     HideToolFilter,
     RedactFilter,
     SequencerMode,
     TransformResultFilter,
 )
-from agno_relay.runtime import (
+from agno_harness.runtime import (
     EVENT_RUN_PAUSED,
     EVENT_SUBAGENT_END,
     EVENT_SUBAGENT_START,
 )
-from agno_relay.runtime.parsers import subagent_steps_parser
+from agno_harness.runtime.parsers import subagent_steps_parser
 
 from .conformance import assert_valid_agui_sequence, messages_from_events
 from .conftest import (
@@ -41,7 +41,7 @@ from .conftest import (
 
 def runtime_for(chunks, **kwargs):
     kwargs.setdefault("sequencer_mode", SequencerMode.AUDIT)
-    return AguiRuntime(agent=FakeAgent(chunks), **kwargs)
+    return AgentRuntime(agent=FakeAgent(chunks), **kwargs)
 
 
 async def stream(runtime, run_input=None):
@@ -82,7 +82,7 @@ class TestPlainStreaming:
 
 class TestErrors:
     async def test_an_exception_becomes_run_error(self):
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([content("partial")], raise_at=1),
             sequencer_mode=SequencerMode.AUDIT,
         )
@@ -93,7 +93,7 @@ class TestErrors:
         assert events[-1].raw_event == {"threadId": "thread-1", "runId": "run-1"}
 
     async def test_an_open_message_is_closed_before_run_error(self):
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([content("partial")], raise_at=1),
             sequencer_mode=SequencerMode.AUDIT,
         )
@@ -121,7 +121,7 @@ class TestErrors:
     async def test_a_cancelled_run_becomes_run_error(self):
         from agno.run.agent import RunCancelledEvent
 
-        from agno_relay.runtime import EVENT_RUN_CANCELLED
+        from agno_harness.runtime import EVENT_RUN_CANCELLED
 
         events = await stream(runtime_for([RunCancelledEvent(reason="user aborted")]))
         cancelled_events = [e for e in events if getattr(e, "name", None) == EVENT_RUN_CANCELLED]
@@ -634,7 +634,7 @@ class TestHITL:
 
             return gen()
 
-        monkeypatch.setattr("agno_relay.runtime.runner.resume_paused_run", fake_resume)
+        monkeypatch.setattr("agno_harness.runtime.runner.resume_paused_run", fake_resume)
 
         run_input = make_input(
             messages=[ToolMessage(id="t1", role="tool", tool_call_id="c1", content="true")]
@@ -651,7 +651,7 @@ class TestHITL:
 
 class TestSubAgents:
     async def test_a_sub_agents_output_arrives_inside_the_bracket(self):
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -674,7 +674,7 @@ class TestSubAgents:
         The runtime's own comment told clients to group on the CUSTOM bracket,
         and replay never restored the steps, so they were noise on the wire.
         """
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -689,7 +689,7 @@ class TestSubAgents:
         assert "STEP_FINISHED" not in types_of(events)
 
     async def test_the_bracket_closes_even_if_the_sub_agent_raises(self):
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -707,7 +707,7 @@ class TestSubAgents:
         assert len(customs(events, EVENT_SUBAGENT_END)) == 1
 
     async def test_disabling_the_feature_hides_the_inner_run(self):
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([], enable_subagent_streaming=False)
 
@@ -723,7 +723,7 @@ class TestSubAgents:
 
     async def test_boundaries_enclose_every_forwarded_frame(self):
         """The frames stay ordinary AG-UI events; the boundaries say whose they are."""
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -753,7 +753,7 @@ class TestSubAgents:
     async def test_the_task_description_rides_on_the_start_boundary(self):
         """A header wants six words and a delegated task wants everything, so the
         tool sends both and the client picks per view."""
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -774,7 +774,7 @@ class TestSubAgents:
         assert value["prompt"] == "def add(a, b): return a - b"
 
     async def test_an_undescribed_delegation_omits_the_fields(self):
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -791,7 +791,7 @@ class TestSubAgents:
 
     async def test_each_delegation_gets_its_own_sub_run_id(self):
         """Two calls to one reviewer is two runs, not one panel with both inside."""
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -813,7 +813,7 @@ class TestSubAgents:
     async def test_the_tool_can_read_the_id_it_was_given(self):
         """The tool result is the only part of a delegation Agno persists, so a
         tool that wants the link recorded needs the id while it runs."""
-        from agno_relay import substream
+        from agno_harness import substream
 
         seen: list[str] = []
 
@@ -833,7 +833,7 @@ class TestSubAgents:
     async def test_the_boundary_names_the_tool_call_that_delegated(self):
         """The delegating card is usually hidden, so the id is how a client
         relates the panel back to the call that opened it."""
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -852,7 +852,7 @@ class TestSubAgents:
     async def test_parallel_tool_calls_leave_the_link_out(self):
         """Two calls in flight makes the delegator a guess, and a wrong link is
         worse than none."""
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
 
@@ -877,7 +877,7 @@ class TestSubAgents:
         minted message ids from one counter and their text ran together into a
         single message.
         """
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([])
         second_done = asyncio.Event()
@@ -915,7 +915,7 @@ class TestSubAgents:
         assert set(text_of(events)) >= set("onetwo")
 
     async def test_no_boundaries_when_the_feature_is_disabled(self):
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = runtime_for([], enable_subagent_streaming=False)
 

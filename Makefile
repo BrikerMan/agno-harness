@@ -1,4 +1,4 @@
-.PHONY: help sync lint format test check run
+.PHONY: help sync lint format test ci check run
 
 help:
 	@echo "Available commands:"
@@ -6,7 +6,9 @@ help:
 	@echo "  make lint    - Run ruff linter and mypy type checks"
 	@echo "  make format  - Auto-format code with ruff"
 	@echo "  make test    - Run pytest test suite"
-	@echo "  make check   - Run format, lint, and test"
+	@echo "  make ci      - Non-mutating lint + typecheck + test (for GitHub Actions)"
+	@echo "  make check   - Format, then lint and test"
+	@echo "  make run     - Run the in-repo CLI demo"
 
 sync:
 	uv sync --all-extras
@@ -22,4 +24,13 @@ format:
 test:
 	uv run pytest tests
 
+ci:
+	uv run ruff format --check src tests
+	uv run ruff check src tests
+	uv run mypy src
+	uv run pytest tests
+
 check: format lint test
+
+run:
+	uv run python examples/01_cli_demo.py

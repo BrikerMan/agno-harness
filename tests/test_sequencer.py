@@ -25,7 +25,7 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 
-from agno_relay.core.sequencer import (
+from agno_harness.core.sequencer import (
     EventSequencer,
     ProtocolViolationError,
     SequencerMode,

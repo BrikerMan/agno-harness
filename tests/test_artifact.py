@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from agno_relay import (
-    AguiRuntime,
+from agno_harness import (
+    AgentRuntime,
     ArtifactCard,
     PresentationDeck,
     SequencerMode,
@@ -19,7 +19,7 @@ from agno_relay import (
     read_artifact_section,
     stream_artifact,
 )
-from agno_relay.core.streamui import CardCatalog
+from agno_harness.core.streamui import CardCatalog
 
 from .conftest import FakeAgent, collect, content, customs, make_input, run_completed
 
@@ -72,7 +72,7 @@ def test_streaming_artifact_toolkit_instructions():
 @pytest.mark.asyncio
 async def test_stream_artifact_tool(tmp_path):
     catalog = CardCatalog([ArtifactCard])
-    runtime = AguiRuntime(
+    runtime = AgentRuntime(
         agent=FakeAgent([]),
         catalog=catalog,
         sequencer_mode=SequencerMode.AUDIT,
@@ -111,7 +111,7 @@ async def test_stream_artifact_tool(tmp_path):
 async def test_presentation_deck_streaming_and_persistence(tmp_path):
     catalog = CardCatalog([PresentationDeck])
     root_dir = str(tmp_path / "workspaces" / "{task-id}")
-    runtime = AguiRuntime(
+    runtime = AgentRuntime(
         agent=FakeAgent(
             [
                 content(
@@ -161,7 +161,7 @@ async def test_presentation_deck_streaming_and_persistence(tmp_path):
 async def test_artifact_card_with_nested_code_blocks_and_xml_streaming(tmp_path):
     catalog = CardCatalog([ArtifactCard])
     root_dir = str(tmp_path / "artifacts" / "{task-id}")
-    runtime = AguiRuntime(
+    runtime = AgentRuntime(
         agent=FakeAgent(
             [
                 content("<stream-ui>\n"),
@@ -216,7 +216,7 @@ async def test_artifact_card_with_nested_code_blocks_and_xml_streaming(tmp_path)
 @pytest.mark.asyncio
 async def test_presentation_deck_streaming_token_chunks_extracts_all_items(tmp_path: Path):
     """Token-by-token streaming must not slice lines and miss slide extractions."""
-    from agno_relay.core.streamui import CardCatalog, StreamUIFenceParser
+    from agno_harness.core.streamui import CardCatalog, StreamUIFenceParser
 
     cat = CardCatalog([PresentationDeck])
 
@@ -359,7 +359,7 @@ async def test_append_artifact(tmp_path: Path):
 async def test_streamui_mode_append_persistence(tmp_path: Path):
     catalog = CardCatalog([PresentationDeck])
     art_dir = tmp_path / "{task-id}"
-    runtime = AguiRuntime(
+    runtime = AgentRuntime(
         agent=FakeAgent([]),
         catalog=catalog,
         sequencer_mode=SequencerMode.AUDIT,

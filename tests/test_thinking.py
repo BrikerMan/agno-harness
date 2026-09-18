@@ -44,7 +44,7 @@ class TestThinkingMapping:
         assert model.max_tokens == 2048
 
     def test_models_of_walks_subagent_toolkit(self):
-        from agno_relay.tools.subagent import SubAgentToolkit
+        from agno_harness.tools.subagent import SubAgentToolkit
 
         parent_model = SimpleNamespace(extra_body=None, max_tokens=None)
         child_model = SimpleNamespace(extra_body=None, max_tokens=None)

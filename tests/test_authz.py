@@ -22,10 +22,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agno_relay import AguiRuntime, make_agui_router
-from agno_relay.runtime.longrun import LongRunManager, RunNotOwned
-from agno_relay.runtime.threads import ThreadService
-from agno_relay.stores import InMemoryRunEventLog, Stores
+from agno_harness import AgentRuntime, make_agui_router
+from agno_harness.runtime.longrun import LongRunManager, RunNotOwned
+from agno_harness.runtime.threads import ThreadService
+from agno_harness.stores import InMemoryRunEventLog, Stores
 
 from .conftest import FakeAgent, make_input, run_completed
 from .test_replay import FakeDb, FakeInput, FakeRun, FakeSession
@@ -52,7 +52,7 @@ def two_user_db() -> FakeDb:
 
 def make_app(db=None, *, long_runs=None, runtime=None):
     """A router whose identity comes from a header, as a middleware would supply."""
-    runtime = runtime or AguiRuntime(agent=FakeAgent([run_completed()]), db=db)
+    runtime = runtime or AgentRuntime(agent=FakeAgent([run_completed()]), db=db)
     app = FastAPI()
     app.include_router(
         make_agui_router(
@@ -129,7 +129,7 @@ class TestIdentityComesFromTheServer:
 class TestSingleUserMode:
     def test_no_resolver_means_everything_is_shared(self):
         """A legitimate local-tool configuration, and it must keep working."""
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]), db=two_user_db())
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]), db=two_user_db())
         app = FastAPI()
         app.include_router(make_agui_router(runtime))
         client = TestClient(app)
@@ -138,13 +138,13 @@ class TestSingleUserMode:
 
     def test_the_absence_of_authentication_is_announced(self, caplog):
         """So that "no auth" is a choice somebody made, not one they missed."""
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]))
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]))
         with caplog.at_level("WARNING"):
             make_agui_router(runtime)
         assert "single-user mode" in caplog.text
 
     def test_a_configured_resolver_says_nothing(self, caplog):
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]))
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]))
         with caplog.at_level("WARNING"):
             make_agui_router(runtime, resolve_user_id=lambda _: "alice")
         assert "single-user mode" not in caplog.text
@@ -156,7 +156,7 @@ class TestRunIsolation:
     @pytest.fixture
     def wired(self):
         log = InMemoryRunEventLog()
-        runtime = AguiRuntime(agent=FakeAgent([run_completed()]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]), stores=Stores(event_log=log))
         manager = LongRunManager(runtime, log=log)
         client, _ = make_app(long_runs=manager, runtime=runtime)
         return client, manager
@@ -206,7 +206,7 @@ class TestServiceLevel:
         log = InMemoryRunEventLog()
         await log.start_run("run-1", "t1", user_id="alice")
         manager = LongRunManager(
-            AguiRuntime(agent=FakeAgent(), stores=Stores(event_log=log)), log=log
+            AgentRuntime(agent=FakeAgent(), stores=Stores(event_log=log)), log=log
         )
 
         with pytest.raises(RunNotOwned):

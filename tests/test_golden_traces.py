@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from agno_relay import AguiRuntime, HideToolFilter, SequencerMode
+from agno_harness import AgentRuntime, HideToolFilter, SequencerMode
 
 from .conformance import assert_valid_agui_sequence, to_jsonl
 from .conftest import (
@@ -99,7 +99,7 @@ SCENARIOS = {
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
 async def test_scenario_matches_its_golden_trace(name):
     chunks, filters = SCENARIOS[name]
-    runtime = AguiRuntime(agent=FakeAgent(chunks), sequencer_mode=SequencerMode.AUDIT)
+    runtime = AgentRuntime(agent=FakeAgent(chunks), sequencer_mode=SequencerMode.AUDIT)
     for tool_filter in filters:
         runtime.register_tool_filter(tool_filter)
 

@@ -1,4 +1,4 @@
-# SPEC: agno-relay Protocol & Architecture
+# SPEC: agno-harness Protocol & Architecture
 
 > **Version**: 1.0.0-draft  
 > **Status**: Living Standard  
@@ -8,13 +8,14 @@
 
 ## 1. Vision & Core Philosophy
 
-**"Write once, run anywhere."**
+**Runtime + Relay. One agent, many surfaces.**
 
-`agno-relay` is the universal enterprise-grade production gateway for AGNO agents. It bridges AGNO's reasoning engine across four primary target channels:
-1. **Web**: Full-fidelity AG-UI protocol over Server-Sent Events (SSE) with 0s keepalive pings and disconnection recovery (`/attach`).
-2. **Teams**: Microsoft 365 Agents SDK over FastAPI, with rate-limited adaptive flushing, reaction-ACK, and native Adaptive Cards.
-3. **Lark (Feishu)**: WebSocket long-connection mode (zero public ingress required), interactive card v2 callback handling, and typing fallbacks.
-4. **CLI**: Rich terminal UI for rapid local testing, session replay, and deterministic debugging.
+`agno-harness` is enterprise agent scaffolding. Runtime is how an Agno agent runs and how the UI is rebuilt (AG-UI, compression, resume, cards). Relay is how that same run reaches a channel:
+
+1. **Web**: AG-UI over SSE, 5s `: ping`, reconnect on `/attach`.
+2. **Teams**: Microsoft 365 Agents SDK, rate-limited flush, Adaptive Cards.
+3. **Lark / Feishu**: WebSocket (no public URL), interactive card v2.
+4. **CLI**: Rich terminal for local runs.
 
 ### Two Cardinal Rules
 
@@ -69,7 +70,7 @@ class Channel(Protocol):
 
 ### 3.1 ConversationKey
 
-IM platforms have hierarchical conversation structures. `agno-relay` captures this via `ConversationKey`:
+IM platforms have hierarchical conversation structures. `agno-harness` captures this via `ConversationKey`:
 
 ```python
 class ConversationKey(BaseModel):
@@ -81,7 +82,7 @@ class ConversationKey(BaseModel):
     sender_id: str | None = None     # user unique identity
 ```
 
-### 3.2 Ivy-Style Session Boundary
+### 3.2 Default Session Boundary
 
 To avoid cross-talk in team chats:
 - **1-on-1 Direct Message**: `session_key = conversation_id` (entire DM shares one continuous context).
@@ -99,7 +100,7 @@ Active sessions maintain a `last_active_at` timestamp.
 
 ## 4. Class-First Card Component Standard
 
-Cards must be **self-contained classes** in their own modules. They MUST NOT depend on instance decorators like `@catalog.renderer(...)` which cause circular import deadlocks.
+Cards are **self-contained classes** in their own modules. Each class cleanly encapsulates its Pydantic schema, server-side data resolver, and platform-specific visual renderers without relying on global runtime registries:
 
 ```python
 class MyItem(ItemSchema):

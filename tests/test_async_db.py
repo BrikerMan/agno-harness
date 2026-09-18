@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agno_relay.runtime.threads import ThreadService
-from agno_relay.stores.redis_log import RedisRunEventLog
+from agno_harness.runtime.threads import ThreadService
+from agno_harness.stores.redis_log import RedisRunEventLog
 
 
 @pytest.mark.asyncio

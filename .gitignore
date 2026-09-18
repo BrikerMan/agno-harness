@@ -40,6 +40,11 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+**/.env
+
+# Local-only demos (not part of the public tree yet)
+examples/demo/
+examples/frontend-kit/
 
 # IDEs
 .idea/

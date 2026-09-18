@@ -1,8 +1,8 @@
 import pytest
 from rich.console import Console
 
-from agno_relay import (
-    AguiRuntime,
+from agno_harness import (
+    AgentRuntime,
     ChannelEvent,
     CLIChannel,
     ConversationKey,
@@ -10,12 +10,13 @@ from agno_relay import (
     LarkChannel,
     RelayApp,
     SQLiteSink,
+    StreamMode,
     TeamsChannel,
     WebChannel,
 )
-from agno_relay.core.streamui.schema import BlockSchema, CardCatalog, ItemSchema
+from agno_harness.core.streamui.schema import BlockSchema, CardCatalog, ItemSchema
 
-from .conftest import FakeAgent, content, run_completed
+from .conftest import FakeAgent, content, run_completed, tool_completed, tool_started
 
 
 class ItemCard(ItemSchema):
@@ -56,7 +57,7 @@ async def test_relay_app_end_to_end_routing_and_sinks(tmp_path):
         run_completed(),
     ]
     fake_agent = FakeAgent(chunks)
-    runtime = AguiRuntime(agent=fake_agent, catalog=catalog)
+    runtime = AgentRuntime(agent=fake_agent, catalog=catalog)
 
     app = RelayApp(runtime, card_catalog=catalog)
     app.add_sink(sqlite_sink)
@@ -104,7 +105,8 @@ async def test_relay_app_end_to_end_routing_and_sinks(tmp_path):
 @pytest.mark.asyncio
 async def test_relay_app_session_reset_command():
     fake_agent = FakeAgent([content("Should not be called"), run_completed()])
-    app = RelayApp(fake_agent)
+    runtime = AgentRuntime(agent=fake_agent)
+    app = RelayApp(runtime)
     cli_channel = CLIChannel(console=Console(record=True))
     app.add_channel(cli_channel)
 
@@ -116,6 +118,133 @@ async def test_relay_app_session_reset_command():
 
     outbound = await app.handle_event(cli_channel, event)
     assert "cleared" in outbound.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_relay_start_leaves_cli_channel_running():
+    runtime = AgentRuntime(agent=FakeAgent([]))
+    app = RelayApp(runtime)
+    cli = CLIChannel(console=Console(record=True))
+    app.add_channel(cli)
+
+    await app.start()
+    try:
+        assert cli._running is True
+    finally:
+        await app.stop()
+    assert cli._running is False
+
+
+@pytest.mark.asyncio
+async def test_cli_interactive_loop_runs_until_exit(monkeypatch):
+    runtime = AgentRuntime(agent=FakeAgent([]))
+    app = RelayApp(runtime)
+    cli = CLIChannel(console=Console(record=True))
+    app.add_channel(cli)
+
+    await app.start()
+    try:
+        monkeypatch.setattr("builtins.input", lambda _: "/exit")
+        await cli.run_interactive_loop()
+    finally:
+        await app.stop()
+
+    output = cli.console.export_text()
+    assert "CLI ready" in output
+    assert "Bye." in output
+
+
+@pytest.mark.asyncio
+async def test_cli_raw_mode_streams_text_deltas():
+    runtime = AgentRuntime(
+        agent=FakeAgent([content("Hel"), content("lo "), content("world"), run_completed()])
+    )
+    app = RelayApp(runtime)
+    cli = CLIChannel(console=Console(record=True))
+    app.add_channel(cli)
+    assert app.channels["cli"][1] is StreamMode.RAW
+
+    deltas: list[str] = []
+    original = cli.stream_chunk
+
+    async def capture(destination, message_id, delta):
+        deltas.append(delta)
+        await original(destination, message_id, delta)
+
+    cli.stream_chunk = capture  # type: ignore[method-assign]
+
+    outbound = await app.handle_event(
+        cli,
+        ChannelEvent(
+            event_id="stream-1",
+            key=ConversationKey(platform="cli", chat_id="c1", is_direct_message=True),
+            text="hi",
+        ),
+    )
+
+    assert outbound.text == "Hello world"
+    assert len(deltas) > 1
+    assert "".join(deltas) == "Hello world"
+    assert "Hello world" in cli.console.export_text()
+
+
+@pytest.mark.asyncio
+async def test_cli_final_mode_does_not_stream_chunks():
+    runtime = AgentRuntime(agent=FakeAgent([content("Hello world"), run_completed()]))
+    app = RelayApp(runtime)
+    cli = CLIChannel(console=Console(record=True))
+    app.add_channel(cli, stream_mode=StreamMode.FINAL)
+
+    deltas: list[str] = []
+
+    async def capture(destination, message_id, delta):
+        deltas.append(delta)
+
+    cli.stream_chunk = capture  # type: ignore[method-assign]
+
+    outbound = await app.handle_event(
+        cli,
+        ChannelEvent(
+            event_id="final-1",
+            key=ConversationKey(platform="cli", chat_id="c1", is_direct_message=True),
+            text="hi",
+        ),
+    )
+
+    assert outbound.text == "Hello world"
+    assert deltas == []
+    assert "Hello world" in cli.console.export_text()
+
+
+@pytest.mark.asyncio
+async def test_cli_tool_panel_includes_params():
+    runtime = AgentRuntime(
+        agent=FakeAgent(
+            [
+                tool_started("c1", "duckduckgo_search", {"query": "Python 3.13"}),
+                tool_completed("c1", "duckduckgo_search", {"ok": True}),
+                content("Here is what I found."),
+                run_completed(),
+            ]
+        )
+    )
+    app = RelayApp(runtime)
+    cli = CLIChannel(console=Console(record=True))
+    app.add_channel(cli)
+
+    await app.handle_event(
+        cli,
+        ChannelEvent(
+            event_id="tool-1",
+            key=ConversationKey(platform="cli", chat_id="c1", is_direct_message=True),
+            text="search python",
+        ),
+    )
+
+    output = cli.console.export_text()
+    assert "duckduckgo_search" in output
+    assert "Python 3.13" in output
+    assert "Here is what I found." in output
 
 
 def test_channel_instantiations_and_routers():
@@ -135,9 +264,50 @@ def test_channel_instantiations_and_routers():
     assert "/api/messages" in routes
 
     # 4. WebChannel
-    runtime = AguiRuntime(agent=FakeAgent([]))
+    runtime = AgentRuntime(agent=FakeAgent([]))
     web = WebChannel(runtime=runtime)
     assert web.name == "web"
     web_router = web.get_router()
     web_routes = [r.path for r in web_router.routes]
     assert "/agui" in web_routes
+
+
+def test_message_collector_renders_hitl_cards():
+    from ag_ui.core import CustomEvent, EventType
+
+    from agno_harness.stream.collector import MessageCollector
+
+    # 1. Teams collector
+    teams_collector = MessageCollector(platform="teams")
+    pause_event = CustomEvent(
+        type=EventType.CUSTOM,
+        name="run.paused",
+        value={
+            "pauseType": "confirmation",
+            "toolCallId": "call_123",
+            "toolName": "delete_database",
+            "toolArgs": {"db_name": "prod"},
+        },
+    )
+    teams_collector.feed(pause_event)
+    teams_outbound = teams_collector.finalize()
+
+    assert len(teams_outbound.cards) == 1
+    card = teams_outbound.cards[0]
+    assert card["type"] == "AdaptiveCard"
+    action_data = card["actions"][0]["data"]
+    assert action_data["action_id"] == "agno.hitl.resume"
+    assert action_data["tool_call_id"] == "call_123"
+    assert action_data["accepted"] is True
+
+    # 2. Lark collector
+    lark_collector = MessageCollector(platform="lark")
+    lark_collector.feed(pause_event)
+    lark_outbound = lark_collector.finalize()
+
+    assert len(lark_outbound.cards) == 1
+    lark_card = lark_outbound.cards[0]
+    actions = lark_card["elements"][1]["actions"]
+    assert actions[0]["value"]["action_id"] == "agno.hitl.resume"
+    assert actions[0]["value"]["tool_call_id"] == "call_123"
+    assert actions[0]["value"]["accepted"] is True

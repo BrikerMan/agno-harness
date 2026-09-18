@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from ag_ui.core import EventType
 
-from agno_relay import SequencerMode
+from agno_harness import SequencerMode
 
 from .conformance import assert_valid_agui_sequence
 from .conftest import (
@@ -35,6 +35,11 @@ from .conftest import (
 )
 
 DEMO_BACKEND = Path(__file__).resolve().parents[1] / "examples" / "demo" / "backend"
+
+if not (DEMO_BACKEND / "app" / "main.py").is_file():
+    pytest.skip(
+        "examples/demo is local-only and not in the published tree", allow_module_level=True
+    )
 
 if str(DEMO_BACKEND) not in sys.path:
     sys.path.insert(0, str(DEMO_BACKEND))
@@ -59,7 +64,7 @@ async def stores(tmp_path):
     The hot log is the same in-process stand-in the demo uses when Redis is
     unset: resume lives there, the SQL archive is written when the run settles.
     """
-    from agno_relay.stores import InMemoryRunEventLog
+    from agno_harness.stores import InMemoryRunEventLog
 
     built, _ = await app_models.setup_persistence(f"sqlite+aiosqlite:///{tmp_path}/demo.db")
     hot = InMemoryRunEventLog()
@@ -132,7 +137,7 @@ class TestDemoRuntime:
         between the two boundaries, which is where the client reads it from live
         and where frame replay reads it from afterwards.
         """
-        from agno_relay import substream
+        from agno_harness import substream
 
         runtime = app_agent_setup.build_runtime(FakeAgent([]), None, stores)
 
@@ -483,7 +488,7 @@ class TestResearcherSubAgent:
         from agno.db.sqlite import SqliteDb
         from agno.tools.user_feedback import UserFeedbackTools
 
-        from agno_relay import SubAgentToolkit
+        from agno_harness import SubAgentToolkit
 
         monkeypatch.delenv("SERPER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -613,7 +618,7 @@ class TestResumeWiring:
     async def test_a_detached_run_can_be_read_back_frame_for_frame(self, stores):
         """The contract the reloading frontend depends on, through the demo's own
         wiring: the same frames come back, in the same order, from storage."""
-        from agno_relay.runtime.longrun import LongRunManager
+        from agno_harness.runtime.longrun import LongRunManager
 
         runtime = app_agent_setup.build_runtime(
             FakeAgent([content("hello"), run_completed()]), None, stores

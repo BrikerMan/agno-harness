@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 from agno.agent import Agent
 
-from agno_relay import SubAgentToolkit
-from agno_relay.tools.subagent import TOOL_NAME
+from agno_harness import SubAgentToolkit
+from agno_harness.tools.subagent import TOOL_NAME
 
 from .conformance import assert_valid_agui_sequence
 from .conftest import (
@@ -52,8 +52,8 @@ class TestSubAgentToolkitConstruction:
 
 class TestSubAgentToolkitDelegation:
     async def test_streams_through_substream_by_default(self):
-        from agno_relay import AguiRuntime
-        from agno_relay.stores import Stores
+        from agno_harness import AgentRuntime
+        from agno_harness.stores import Stores
 
         reviewer = FakeAgent([content("The sign is wrong."), run_completed()])
         reviewer.name = "reviewer"
@@ -80,7 +80,7 @@ class TestSubAgentToolkitDelegation:
             yield content("Done.")
             yield run_completed()
 
-        runtime = AguiRuntime(agent=FakeAgent([]), db=None, stores=Stores())
+        runtime = AgentRuntime(agent=FakeAgent([]), db=None, stores=Stores())
         runtime.agent.arun = lambda **kwargs: parent(**kwargs)
         events = [event async for event in runtime.stream_events(make_input())]
         assert_valid_agui_sequence(events)

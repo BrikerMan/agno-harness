@@ -1,14 +1,16 @@
 # AGENTS.md: Developer & Coding Agent Guidelines
 
-> This document provides strict engineering rules and context for AI coding agents (Cursor, Claude Code, OpenCode) and human contributors working inside the `agno-relay` codebase.
+> This document provides strict engineering rules and context for AI coding agents (Cursor, Claude Code, OpenCode) and human contributors working inside the `agno-harness` codebase.
+
+Docs live under [`docs/README.md`](docs/README.md). Same numbered tree in English and Chinese: cookbooks `00` → foundations `01` → interactions `02` → clients `03` → wire/FAQ `04`.
 
 ---
 
 ## 1. Architecture Guardrails
 
-- **Zero Circular Imports**:
-  - Never introduce global catalog instance decorators (e.g. `@catalog.renderer`).
-  - Always implement cards as **Class-First Components** inheriting from `ItemSchema` or `BlockSchema`.
+- **Class-First Components**:
+  - Implement cards as self-contained classes inheriting from `ItemSchema` or `BlockSchema` (encapsulating schema, resolver, and platform renderers).
+  - Avoid global decorator registries that create import-order bugs or circular dependencies.
 - **Strict Layering**:
   - `core/`: Pure protocols, models, and parsers. MUST NOT import `agno`, `fastapi`, or channel SDKs.
   - `runtime/`: Agno agent execution, sequencer, compression, and clean seal. MUST NOT import FastAPI.
@@ -34,6 +36,6 @@
 - Teams / Lark: `stream_mode="final"` (recommended default) or `stream_mode="throttle"` (1.5s window). Never stream raw token chunks to Teams/Lark.
 
 ### Testing Standard
-- Every new module in `src/agno_relay/` must have a corresponding test file in `tests/`.
+- Every new module in `src/agno_harness/` must have a corresponding test file in `tests/`.
 - Mock external network calls (Teams Connector, Lark OpenSearch) in unit tests using deterministic fixtures.
 - Run `make check` (format + lint + test) before completing any task.

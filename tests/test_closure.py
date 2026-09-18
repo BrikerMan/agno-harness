@@ -1,8 +1,4 @@
-"""Tests for clean seal, dangling tool call closure, and smart compression in better-agno-toolbox.
-
-Usage:
-    uv run pytest vendor/better-agno-toolbox/tests/test_closure.py
-"""
+"""Tests for clean seal, dangling tool call closure, and smart compression."""
 
 from __future__ import annotations
 
@@ -21,7 +17,7 @@ from agno.run.agent import (
 from agno.run.base import RunStatus
 from agno.session.agent import AgentSession
 
-from agno_relay.runtime.closure import (
+from agno_harness.runtime.closure import (
     attach_checkpoint_to_session,
     close_dangling_tool_calls,
     install_sealed_history_hook,
@@ -29,14 +25,14 @@ from agno_relay.runtime.closure import (
     seal_session_run,
     strip_stream_ui,
 )
-from agno_relay.runtime.compression import (
+from agno_harness.runtime.compression import (
     SmartCompressionManager,
     count_messages_tokens,
     count_string_tokens,
     reorganize_messages_with_checkpoint,
     structural_prune,
 )
-from agno_relay.runtime.parsers import compression_events_parser
+from agno_harness.runtime.parsers import compression_events_parser
 
 
 def test_sanitize_reason():

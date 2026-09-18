@@ -20,7 +20,7 @@ Two rules, for two different reasons:
 ``observability`` is the only layer that may import ``opentelemetry``
     for the same reason: it lives behind an extra, so an eager import anywhere
     else would turn an optional dependency into an ``ImportError`` on ``import
-    agno_relay``.
+    agno_harness``.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src" / "agno_relay"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "src" / "agno_harness"
 
 # layer -> package names it must not reach for.
 FORBIDDEN: dict[str, tuple[str, ...]] = {
@@ -72,14 +72,14 @@ def test_layer_does_not_import_forbidden_packages(layer: str) -> None:
     assert not offenders, "\n".join(offenders)
 
 
-def test_transport_and_channels_are_the_only_layers_that_import_fastapi() -> None:
+def test_transport_and_channels_and_server_are_the_only_layers_that_import_fastapi() -> None:
     """The rule above is only meaningful if something does use FastAPI."""
     users = {
         path.relative_to(PACKAGE_ROOT).parts[0]
         for path in PACKAGE_ROOT.rglob("*.py")
         if "fastapi" in _imported_roots(path)
     }
-    assert users == {"transport", "channels"}
+    assert users == {"transport", "channels", "server"}
 
 
 def _modules_after(statement: str) -> set[str]:
@@ -102,9 +102,9 @@ def test_importing_the_toolbox_does_not_load_the_transport() -> None:
     module stays unimported until somebody asks for a router, which is what
     makes ``make_agui_router`` a lazy attribute on the package.
     """
-    loaded = _modules_after("import agno_relay")
-    assert "agno_relay.transport" not in loaded
-    assert "agno_relay.transport.router" not in loaded
+    loaded = _modules_after("import agno_harness")
+    assert "agno_harness.transport" not in loaded
+    assert "agno_harness.transport.router" not in loaded
 
 
 def test_importing_the_toolbox_does_not_load_the_observability_layer() -> None:
@@ -116,26 +116,37 @@ def test_importing_the_toolbox_does_not_load_the_observability_layer() -> None:
     it is loaded whatever we do. What we control is that nothing here reaches
     for it until somebody asks for tracing.
     """
-    loaded = _modules_after("import agno_relay")
-    assert "agno_relay.observability" not in loaded
-    assert "agno_relay.observability.module" not in loaded
+    loaded = _modules_after("import agno_harness")
+    assert "agno_harness.observability" not in loaded
+    assert "agno_harness.observability.module" not in loaded
 
 
 def test_the_observability_layer_loads_on_demand() -> None:
-    loaded = _modules_after("import agno_relay; agno_relay.ObservabilityModule")
-    assert "agno_relay.observability.module" in loaded
+    loaded = _modules_after("import agno_harness; agno_harness.ObservabilityModule")
+    assert "agno_harness.observability.module" in loaded
 
 
 def test_the_transport_loads_on_demand() -> None:
     """The laziness above must not turn the router into a broken export."""
-    loaded = _modules_after("import agno_relay; agno_relay.make_agui_router")
-    assert "agno_relay.transport.router" in loaded
+    loaded = _modules_after("import agno_harness; agno_harness.make_agui_router")
+    assert "agno_harness.transport.router" in loaded
+
+
+def test_importing_the_toolbox_does_not_load_the_server() -> None:
+    loaded = _modules_after("import agno_harness")
+    assert "agno_harness.server" not in loaded
+    assert "agno_harness.server.server" not in loaded
+
+
+def test_the_server_loads_on_demand() -> None:
+    loaded = _modules_after("import agno_harness; agno_harness.RelayServer")
+    assert "agno_harness.server.server" in loaded
 
 
 def test_driving_a_run_by_hand_does_not_load_the_transport() -> None:
     """The full-manual path, as documented, stays clear of the web layer."""
     loaded = _modules_after(
-        "from agno_relay import EventTranslator, make_run_scope\n"
+        "from agno_harness import EventTranslator, make_run_scope\n"
         "EventTranslator(scope=make_run_scope(thread_id='t', run_id='r'))"
     )
-    assert "agno_relay.transport" not in loaded
+    assert "agno_harness.transport" not in loaded

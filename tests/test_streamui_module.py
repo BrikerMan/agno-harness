@@ -10,9 +10,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from agno_relay import AguiRuntime, SequencerMode
-from agno_relay.core.streamui import BlockSchema, CardCatalog, ItemSchema
-from agno_relay.runtime.modules.streamui import emit_item, emit_text, ui_block
+from agno_harness import AgentRuntime, SequencerMode
+from agno_harness.core.streamui import BlockSchema, CardCatalog, ItemSchema
+from agno_harness.runtime.modules.streamui import emit_item, emit_text, ui_block
 
 from .conftest import FakeAgent, collect, content, customs, make_input, run_completed, text_of
 
@@ -51,8 +51,8 @@ def make_catalog() -> CardCatalog:
     return catalog
 
 
-def runtime_for(chunks, *, catalog=None, **kwargs) -> AguiRuntime:
-    return AguiRuntime(
+def runtime_for(chunks, *, catalog=None, **kwargs) -> AgentRuntime:
+    return AgentRuntime(
         agent=FakeAgent(chunks),
         catalog=catalog if catalog is not None else make_catalog(),
         sequencer_mode=SequencerMode.AUDIT,
@@ -126,7 +126,7 @@ class TestValidation:
 
     async def test_without_a_catalog_nothing_is_validated(self):
         """A usable prototyping mode, and the reason the catalog is optional."""
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(
                 [
                     content('```stream-ui {"schema": "whatever"}\n{"free": "form"}\n```\n'),

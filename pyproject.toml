@@ -1,12 +1,12 @@
 [project]
-name = "agno-relay"
+name = "agno-harness"
 version = "0.1.0"
-description = "Universal Multi-Channel Production Gateway for AGNO Agents: Web, Teams, Lark, CLI"
+description = "Enterprise agent scaffolding: you write the business and the cards; resume, compression, and channels are production-ready"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Eliyar Eziz" }]
-keywords = ["agno", "agent", "teams", "lark", "feishu", "ag-ui", "gateway", "multi-channel"]
+keywords = ["agno", "agent", "harness", "ag-ui", "teams", "lark", "feishu", "gateway", "multi-channel"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -28,6 +28,7 @@ dependencies = [
     "typer>=0.16",
     "tiktoken>=0.7",
     "python-dotenv>=1.0",
+    "qrcode>=8.2",
 ]
 
 [project.optional-dependencies]
@@ -63,18 +64,22 @@ otel = [
     "openinference-instrumentation-agno>=0.1.29",
 ]
 all = [
-    "agno-relay[fastapi,teams,lark,sqlite,postgres,redis,otel]",
+    "agno-harness[fastapi,teams,lark,sqlite,postgres,redis,otel]",
 ]
 
+[project.urls]
+Homepage = "https://github.com/eliyar-eziz"
+Documentation = "https://github.com/eliyar-eziz"
+
 [project.scripts]
-agno-relay = "agno_relay.cli.main:main"
+agno-harness = "agno_harness.cli.main:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agno_relay"]
+packages = ["src/agno_harness", "src/better_agno_toolbox"]
 
 [dependency-groups]
 dev = [

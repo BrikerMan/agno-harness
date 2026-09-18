@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from agno_relay import (
-    AguiRuntime,
+from agno_harness import (
+    AgentRuntime,
     BlockSchema,
     CardCatalog,
     ItemSchema,
@@ -114,7 +114,7 @@ class TestTodoToolkitExecution:
             yield content("Pipeline updated.")
             yield run_completed()
 
-        runtime = AguiRuntime(agent=FakeAgent([]), catalog=_catalog())
+        runtime = AgentRuntime(agent=FakeAgent([]), catalog=_catalog())
         runtime.agent.arun = lambda **kwargs: parent(**kwargs)
         events = [event async for event in runtime.stream_events(make_input())]
         assert_valid_agui_sequence(events)
@@ -137,7 +137,7 @@ class TestTodoToolkitExecution:
             yield content("Pipeline updated.")
             yield run_completed()
 
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([]),
             catalog=_catalog(),
         )

@@ -19,8 +19,8 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from agno_relay.core.log import Frame, FrameKind, RunStatus, coalesce_events, select_frames
-from agno_relay.stores import (
+from agno_harness.core.log import Frame, FrameKind, RunStatus, coalesce_events, select_frames
+from agno_harness.stores import (
     InMemoryRunEventLog,
     ResumeMode,
     RunFrameMixin,
@@ -67,7 +67,7 @@ async def log(request):
         return
 
     pytest.importorskip("redis")
-    from agno_relay.stores.redis_log import RedisRunEventLog
+    from agno_harness.stores.redis_log import RedisRunEventLog
 
     backend = RedisRunEventLog.from_url(REDIS_URL, namespace=f"test-{os.getpid()}")
     yield backend
@@ -312,7 +312,7 @@ class TestOrphanDetection:
     @pytest.fixture
     async def log(self):
         pytest.importorskip("redis")
-        from agno_relay.stores.redis_log import RedisRunEventLog
+        from agno_harness.stores.redis_log import RedisRunEventLog
 
         backend = RedisRunEventLog.from_url(
             REDIS_URL, namespace=f"orphan-{os.getpid()}", heartbeat_ttl=1
@@ -442,7 +442,7 @@ class TestResumeCapability:
         assert Stores(event_log=InMemoryRunEventLog()).is_durable is False
 
     def test_a_history_archive_makes_a_hot_log_durable(self):
-        from agno_relay.stores import InMemoryHistoryArchive
+        from agno_harness.stores import InMemoryHistoryArchive
 
         stores = Stores(
             event_log=InMemoryRunEventLog(),

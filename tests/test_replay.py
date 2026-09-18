@@ -13,17 +13,17 @@ from typing import Any
 
 import pytest
 
-from agno_relay import AguiRuntime, SequencerMode
-from agno_relay.runtime.longrun import LongRunManager
-from agno_relay.runtime.replay import (
+from agno_harness import AgentRuntime, SequencerMode
+from agno_harness.runtime.longrun import LongRunManager
+from agno_harness.runtime.replay import (
     input_to_text,
     last_user_text,
     run_to_messages,
     session_title,
     session_to_messages,
 )
-from agno_relay.runtime.threads import FramesUnavailable
-from agno_relay.stores import InMemoryCustomEventStore, InMemoryRunEventLog, Stores
+from agno_harness.runtime.threads import FramesUnavailable
+from agno_harness.stores import InMemoryCustomEventStore, InMemoryRunEventLog, Stores
 
 from .conformance import assert_valid_agui_sequence, messages_from_events
 from .conftest import FakeAgent, content, make_input, run_completed
@@ -252,7 +252,7 @@ class TestSessions:
 
 class TestRuntimeHistory:
     async def test_replay_returns_none_for_an_unknown_thread(self):
-        runtime = AguiRuntime(agent=FakeAgent(), db=FakeDb([]))
+        runtime = AgentRuntime(agent=FakeAgent(), db=FakeDb([]))
         assert await runtime.replay_messages("nope") is None
 
     async def test_an_inflight_prompt_shows_before_agno_flushes(self):
@@ -261,7 +261,7 @@ class TestRuntimeHistory:
         """
         log = InMemoryRunEventLog()
         await log.start_run("r-live", "t1", user_id="alice", input="still going?")
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(),
             db=FakeDb(
                 [
@@ -281,14 +281,14 @@ class TestRuntimeHistory:
     async def test_a_brand_new_thread_still_has_its_inflight_prompt(self):
         log = InMemoryRunEventLog()
         await log.start_run("r1", "t-new", input="hello")
-        runtime = AguiRuntime(agent=FakeAgent(), db=FakeDb([]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(agent=FakeAgent(), db=FakeDb([]), stores=Stores(event_log=log))
         messages = await runtime.replay_messages("t-new")
         assert messages == [{"id": "u-r1", "role": "user", "content": "hello"}]
 
     async def test_replay_attaches_persisted_custom_events_to_their_run(self):
         store = InMemoryCustomEventStore()
         await store.save("t1", "r1", "billing", {"cost": 7})
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(),
             db=FakeDb([FakeSession("t1", runs=[FakeRun("r1", FakeInput("hi"), "Hello.")])]),
             stores=Stores(custom_events=store),
@@ -297,7 +297,7 @@ class TestRuntimeHistory:
         assert messages[1]["customEvents"] == [{"name": "billing", "value": {"cost": 7}}]
 
     async def test_threads_list_newest_first(self):
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(),
             db=FakeDb(
                 [
@@ -316,7 +316,7 @@ class TestRuntimeHistory:
         store = InMemoryCustomEventStore()
         await store.save("t1", "r1", "billing", {})
         db = FakeDb([FakeSession("t1", runs=[FakeRun("r1", FakeInput("hi"), "a")])])
-        runtime = AguiRuntime(agent=FakeAgent(), db=db, stores=Stores(custom_events=store))
+        runtime = AgentRuntime(agent=FakeAgent(), db=db, stores=Stores(custom_events=store))
         assert (await runtime.delete_thread("t1"))["ok"] is True
         assert db.deleted == ["t1"]
         assert await store.list_by_thread("t1") == []
@@ -326,7 +326,7 @@ class TestRuntimeHistory:
             def delete_session(self, session_id, user_id=None):
                 raise RuntimeError("locked")
 
-        runtime = AguiRuntime(agent=FakeAgent(), db=BrokenDb([]))
+        runtime = AgentRuntime(agent=FakeAgent(), db=BrokenDb([]))
         result = await runtime.delete_thread("t1")
         assert result["ok"] is False
         assert "locked" in result["error"]
@@ -345,7 +345,7 @@ class TestFrameReplay:
 
     async def _run(self, chunks, *, thread_id="thread-1", run_id="run-1"):
         log = await sql_event_log()
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent(chunks),
             stores=Stores(event_log=log),
             sequencer_mode=SequencerMode.AUDIT,
@@ -400,7 +400,7 @@ class TestFrameReplay:
 
     async def test_every_run_in_a_thread_comes_back_in_order(self):
         log = await sql_event_log()
-        runtime = AguiRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
         manager = LongRunManager(runtime, log=log)
         for index, word in enumerate(("first", "second")):
             runtime.agent.chunks = [content(word), run_completed()]
@@ -417,10 +417,10 @@ class TestFrameReplay:
     async def test_a_delegation_replays_from_its_own_frames(self):
         """No ``subagent.run`` record any more; the bracket and its contents are
         in the log like everything else."""
-        from agno_relay import substream
+        from agno_harness import substream
 
         log = await sql_event_log()
-        runtime = AguiRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
 
         async def parent_stream(**kwargs):
             async with substream("reviewer", description="Reviewing add()") as emit:
@@ -445,10 +445,10 @@ class TestFrameReplay:
 
     async def test_the_archive_folds_content_deltas_and_still_reduces(self):
         """SQL keeps one CONTENT event; Redis kept every token for resume."""
-        from agno_relay.stores import InMemoryHistoryArchive
+        from agno_harness.stores import InMemoryHistoryArchive
 
         log = InMemoryRunEventLog()
-        runtime = AguiRuntime(
+        runtime = AgentRuntime(
             agent=FakeAgent([content("Hel"), content("lo."), run_completed()]),
             stores=Stores(event_log=log, history_archive=InMemoryHistoryArchive()),
             sequencer_mode=SequencerMode.AUDIT,
@@ -468,7 +468,7 @@ class TestFrameReplay:
 class TestFramesRequireALog:
     async def test_no_log_at_all_is_refused(self):
         """Rather than an empty list, which reads as "the thread is empty"."""
-        runtime = AguiRuntime(agent=FakeAgent())
+        runtime = AgentRuntime(agent=FakeAgent())
         with pytest.raises(FramesUnavailable, match="history archive or a RunEventLog"):
             await runtime.threads.read_frames("t1")
 
@@ -477,7 +477,7 @@ class TestFramesRequireALog:
         log = InMemoryRunEventLog()
         await log.start_run("r1", "t1")
         await log.append("r1", [{"type": "RUN_STARTED"}])
-        runtime = AguiRuntime(agent=FakeAgent(), stores=Stores(event_log=log))
+        runtime = AgentRuntime(agent=FakeAgent(), stores=Stores(event_log=log))
         frames = await runtime.threads.read_frames("t1")
         assert [f["event"]["type"] for f in frames] == ["RUN_STARTED"]
 
@@ -492,7 +492,7 @@ async def sql_event_log():
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.orm import DeclarativeBase
 
-    from agno_relay.stores import RunFrameMixin, RunRecordMixin, SQLRunEventLog
+    from agno_harness.stores import RunFrameMixin, RunRecordMixin, SQLRunEventLog
 
     class Base(DeclarativeBase):
         pass

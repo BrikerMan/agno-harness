@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from agno_relay.tools.serper import SerperError, SerperTools
+from agno_harness.tools.serper import SerperError, SerperTools
 
 SEARCH_RESPONSE = {
     "searchParameters": {"q": "agno", "type": "search"},

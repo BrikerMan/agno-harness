@@ -1,83 +1,100 @@
-# agno-relay (中文指南)
+# agno-harness (中文指南)
 
-[![PyPI Version](https://img.shields.io/pypi/v/agno-relay.svg)](https://pypi.org/project/agno-relay/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-> **AGNO Agent 的企业级全渠道生产网关**  
-> 一套 Agent 业务代码，无缝挂载运行在 **Web (AG-UI)**、**微软 Teams**、**飞书/Lark** 以及 **本地 CLI**。
+> **企业级 Agent 脚手架。你写业务和卡片，底座已经能上生产。**
 
-[English Documentation](README.md) | [协议设计规范 (SPEC.md)](SPEC.md) | [开发防呆指引 (AGENTS.md)](AGENTS.md)
-
----
-
-## 解决的核心痛点
-
-在 Python 中用 AGNO 写一个 Agent 很简单，但要让它在企业真实办公群（Teams、飞书、企业微信）和 Web 稳定落地，会遇到几个致命的工程暗礁：
-
-1. **高频 Edit 刷出 429 封禁**：如果在 Teams / 飞书中试图模拟 Web 的打字机逐字流式输出，调用消息编辑 API 会在 3 秒内被平台直接限流禁言；
-2. **卡片疯狂刷屏**：搜索工具生成了 10 条推荐结果，传统做法连发 10 条卡片消息，群聊被瞬间炸锅；
-3. **多人 @Bot 上下文串台**：多个同事在同一个群里向 Bot 提问，记忆混淆交叉，甚至泄露隐私；
-4. **长对话爆上下文**：多轮群聊对话积累数天，Token 暴涨、KV 缓存击穿，甚至由于超时断连产生悬空 Tool Call 导致下一轮发话直接报错 400。
-
-`agno-relay` 将这些复杂且痛苦的工程治理封装在底层底座中，让你只专注于 Agent 自身的业务 Prompt 与工具编写。
+[English Documentation](README.md) | [完整文档](docs/zh/README.md) | [协议规范 (SPEC.md)](SPEC.md) | [开发守则 (AGENTS.md)](AGENTS.md)
 
 ---
 
-## 核心技术护城河
-
-- 🛡️ **双流式模式与 429 免疫**：
-  - `stream_mode="final"`（IM 推荐默认）：收到消息秒回 Reaction（🤔）并保持后台 Typing 心跳，执行完毕一次性整包发出完整 Markdown + 结构化卡片，最后打勾（✅），彻底免疫 429；
-  - `stream_mode="throttle"`：1.5s 自适应时间窗节流输出；
-  - `stream_mode="raw"`：面向 Web AG-UI 的零延迟 SSE 实时流。
-- 🧩 **Class-First 自包含卡片组件**：
-  - 彻底淘汰装饰器注册，杜绝跨文件循环导入；
-  - 坚持 **“模型选 ID，服务端补事实”**：模型只输出紧凑的 XML 围栏与主键 ID，服务端异步 resolve 真实数据并自动转为 Teams Adaptive Card 与飞书卡片。
-- 📦 **N 合 1 卡片批量聚合**：
-  - 一个 Block 内生成的多个 item 在群聊中自动聚合为 **1 张精美大卡片**，群内通知只响一声。
-- ⏳ **Ivy 级 25 小时会话拓扑**：
-  - 会话按 `thread_key:sender` 隔离，群内各聊各的互不串台；
-  - 内置 **25 小时闲置超时（25h Idle TTL）**：自然跨越“昨天下午到今天上午”的连续工作节奏，过期自动开启全新干净会话。
-- ⚡ **In-Context 检查点压缩**：
-  - 在上下文末尾追加高密度 Checkpoint，100% 保持 KV Cache 前缀缓存，长对话成本下降 90%。
-- 🔒 **Clean Seal 干净封口**：
-  - 用户中止、超时或网络中断时自动补齐悬空的 Tool Call，杜绝下一轮发话产生 400 Bad Request。
-- 🌐 **飞书 WebSocket 免公网长连接**：
-  - 本地开发无需公网 IP，无需配置域名或隧道，本地一条命令即刻接管群聊。
+写一个 Agno Agent 很快。做成用户敢刷新、敢跑半小时、敢丢进飞书群的产品，难的是协议、压缩、续写、卡片、限流各写一遍。`agno-harness` 把这些收成装配：**Agno Runtime + Relay**。业务和卡片按自己的产品来，压缩、长任务、渠道可以换，不必从零搭。
 
 ---
 
-## 快速上手
+## 真正拉开差距的地方
+
+**刷新了，任务还在跑。** 关 tab 只是不看了，后台接着干。再打开从半句续上，卡片、思考、子面板原样回来。历史回放的是当时用户看见的画面，不是模型 session 里那份被压过的残渣。只有你显式 abort，任务才会停。
+
+**长对话压下去，KV Cache 还在。** Agno 原生压缩每出一个 tool 就同步打一次 LLM，卡 10–20 秒，前缀被改写，Prompt Cache 直接打穿。我们只在 Token 真超限时压一次，检查点**追加在消息流末尾**：生成当轮前缀不变，**KV Cache 命中率 100%**，后面几轮继续吃缓存。一次提炼意图、事实、下一步，不是每个 tool 单独摘要。中止或缺结果的 tool call 会被封口，下一轮不再 400。
+
+**业务和卡片是你的。** 业务挂 Module / Toolkit。卡片一个 class：schema、`resolve()` 补事实、各端 `render_*`。模型只吐 ID，服务端补海报、评分、深链——省 Token，也防幻觉链接。Todo 原地替换，长文 / 幻灯片按段流，不会把几千行灌进 SSE。
+
+**同一套 Agent，进浏览器也进群。** 网页上可以一个字一个字往外蹦。丢进飞书或 Teams，不会在群里刷屏打字——先标一下「正在处理」，跑完把结果收成一张卡发出去，完事再标「好了」。十个搜索结果合成一条通知，群不会被刷爆。私聊记得住上下文；群里每个人各聊各的，不会串。平台超时重推同一条消息，也不会把同一轮活干三遍。本地接飞书不用公网 IP。
+
+**该问人的时候会停，叫帮手的时候看得见。** 要用户确认、补一句、走个审批，Agent 会停下来等，人点完接着干。派出去做调研的帮手，思考和卡片开在自己那一块，主 Agent 只拿回结论，大家的记忆不会搅成一锅。
+
+---
+
+## 怎么装配
+
+| | 你拿到的 | 入口 |
+| --- | --- | --- |
+| **Runtime** | 刷新续写、智能压缩、卡片、等人确认、帮手 | `AgentRuntime` + `make_agui_router` |
+| **Relay** | 同一 Agent 挂到飞书 / Teams / CLI | `RelayApp` + `LarkChannel` / `TeamsChannel` |
+
+只做 Web / 桌面：用 Runtime。还要进群：再加 Relay。Agent 正文不用拆两套。
 
 ```bash
-# 安装基础包 (Web + CLI)
-pip install agno-relay
-
-# 支持 Teams
-pip install "agno-relay[teams]"
-
-# 支持飞书/Lark
-pip install "agno-relay[lark]"
-
-# 全量功能安装
-pip install "agno-relay[all]"
+pip install "agno-harness[fastapi,sqlite]"   # Runtime
+pip install "agno-harness[teams,lark]"       # 加上 Relay
+pip install "agno-harness[all]"
 ```
 
 ```python
 from agno.agent import Agent
-from agno_relay import RelayApp, CLIChannel, LarkChannel
+from agno.db.sqlite import SqliteDb
+from agno.models.openai.like import OpenAILike
+from fastapi import FastAPI
 
-# 1. 编写标准的 AGNO Agent
-agent = Agent(name="Assistant", instructions="你是一个专业的企业助手。")
+from agno_harness import AgentRuntime, SmartCompressionManager, make_agui_router
+from agno_harness.runtime.longrun import LongRunManager
 
-# 2. 挂载到 agno-relay 运行时
+db = SqliteDb(db_file="sessions.db")
+model = OpenAILike(id="...", api_key=..., base_url=...)
+agent = Agent(
+    model=model,
+    db=db,
+    compression_manager=SmartCompressionManager(model=model),
+    add_history_to_context=True,
+    num_history_runs=100,
+    telemetry=False,
+)
+runtime = AgentRuntime(agent=agent, db=db)
+app = FastAPI()
+app.include_router(make_agui_router(runtime, long_runs=LongRunManager(runtime)))
+```
+
+`POST /agui?long-run=1` 出 SSE，刷新走 `GET /runs/{id}/attach`，历史走 `/frames`。
+
+```python
+from agno_harness import RelayApp, CLIChannel, LarkChannel
+
 app = RelayApp(agent)
 app.add_channel(CLIChannel())
 app.add_channel(LarkChannel(app_id="...", app_secret="...", use_websocket=True))
-
-if __name__ == "__main__":
-    app.serve()
+app.serve()
 ```
+
+已有 FastAPI 用 `relay.get_router(resolve_user_id=...)` 挂进去。
+
+```bash
+make run    # examples/01_cli_demo.py
+```
+
+---
+
+## 往下读
+
+完整目录：[docs/zh/README.md](docs/zh/README.md)
+
+| 你在做 | 先读 |
+| --- | --- |
+| 压缩 / Todo / 卡片 | [菜谱](docs/zh/00-agent-cookbook/README.md) → [压缩](docs/zh/02-interactions/04-compression-and-sealing/README.md) · [Todo](docs/zh/02-interactions/03-todo/README.md) · [卡片](docs/zh/02-interactions/01-class-first-cards.md) |
+| Web 刷新续写 | [Web React](docs/zh/03-clients/01-web-react/README.md) · [attach](docs/zh/03-clients/01-web-react/04-attach-and-longrun.md) |
+| 飞书 / Teams | [飞书](docs/zh/00-agent-cookbook/04-lark-feishu-agent.md) · [Teams](docs/zh/00-agent-cookbook/03-teams-bot-agent.md) |
+| HITL / 多 Agent | [HITL](docs/zh/02-interactions/02-hitl-and-actions/README.md) · [委托](docs/zh/02-interactions/06-multi-agent-delegation.md)
 
 ---
 

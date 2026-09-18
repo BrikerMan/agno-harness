@@ -7,8 +7,8 @@ from typing import Any
 from ag_ui.core import RunAgentInput
 from ag_ui.core.types import UserMessage
 
-from agno_relay import AguiRuntime, SequencerMode, make_thread_title_hook
-from agno_relay.runtime.titles import EVENT_THREAD_TITLE
+from agno_harness import AgentRuntime, SequencerMode, make_thread_title_hook
+from agno_harness.runtime.titles import EVENT_THREAD_TITLE
 
 from .conftest import FakeAgent, content, customs, make_input, run_completed, types_of
 from .test_replay import FakeDb, FakeInput, FakeRun, FakeSession
@@ -25,11 +25,11 @@ class FakeTitleModel:
         return type("Response", (), {"content": self.title})()
 
 
-def _runtime(*, title: str = "Shipping checklist", db: FakeDb | None = None) -> AguiRuntime:
+def _runtime(*, title: str = "Shipping checklist", db: FakeDb | None = None) -> AgentRuntime:
     agent = FakeAgent([content("Use a checklist."), run_completed("Use a checklist.")])
     agent.model = FakeTitleModel(title)
     agent.db = db
-    runtime = AguiRuntime(agent=agent, db=db, sequencer_mode=SequencerMode.AUDIT)
+    runtime = AgentRuntime(agent=agent, db=db, sequencer_mode=SequencerMode.AUDIT)
     runtime.on_post_run(make_thread_title_hook(runtime))
     return runtime
 
@@ -55,7 +55,7 @@ class TestGenerateThreadTitle:
 
         agent = FakeAgent()
         agent.model = Boom()
-        runtime = AguiRuntime(agent=agent, db=FakeDb([]), sequencer_mode=SequencerMode.AUDIT)
+        runtime = AgentRuntime(agent=agent, db=FakeDb([]), sequencer_mode=SequencerMode.AUDIT)
         assert await runtime.generate_thread_title("t1", user_text="hi") is None
 
 
@@ -100,7 +100,7 @@ class TestThreadTitleHook:
     async def test_a_failed_run_does_not_name_the_thread(self):
         agent = FakeAgent(raise_at=0)
         agent.model = FakeTitleModel("Should not appear")
-        runtime = AguiRuntime(agent=agent, db=FakeDb([]), sequencer_mode=SequencerMode.AUDIT)
+        runtime = AgentRuntime(agent=agent, db=FakeDb([]), sequencer_mode=SequencerMode.AUDIT)
         runtime.on_post_run(make_thread_title_hook(runtime))
         events = await stream(runtime)
         assert customs(events, EVENT_THREAD_TITLE) == []
@@ -113,7 +113,7 @@ class TestThreadTitleHook:
 
         agent = FakeAgent([content("ok"), run_completed("ok")])
         agent.model = Boom()
-        runtime = AguiRuntime(agent=agent, db=FakeDb([]), sequencer_mode=SequencerMode.AUDIT)
+        runtime = AgentRuntime(agent=agent, db=FakeDb([]), sequencer_mode=SequencerMode.AUDIT)
         runtime.on_post_run(make_thread_title_hook(runtime))
         events = await stream(runtime)
         assert types_of(events)[-1] == "RUN_FINISHED"
@@ -124,8 +124,8 @@ class TestThreadTitleHook:
         agent = FakeAgent([content("answer"), run_completed("answer")])
         agent.model = FakeTitleModel("Concurrent Title")
         agent.db = db
-        runtime = AguiRuntime(agent=agent, db=db, sequencer_mode=SequencerMode.AUDIT)
-        from agno_relay.runtime.titles import make_thread_title_pre_hook
+        runtime = AgentRuntime(agent=agent, db=db, sequencer_mode=SequencerMode.AUDIT)
+        from agno_harness.runtime.titles import make_thread_title_pre_hook
 
         runtime.on_pre_run(make_thread_title_pre_hook(runtime))
         runtime.on_post_run(make_thread_title_hook(runtime))
@@ -151,7 +151,7 @@ class TestThreadTitleHook:
         agent = FakeAgent([content("quick reply"), run_completed("quick reply")])
         agent.model = SlowTitleModel()
         agent.db = db
-        runtime = AguiRuntime(agent=agent, db=db, sequencer_mode=SequencerMode.AUDIT)
+        runtime = AgentRuntime(agent=agent, db=db, sequencer_mode=SequencerMode.AUDIT)
         # Use very small timeout so post_hook doesn't block the stream
         runtime.on_post_run(make_thread_title_hook(runtime, timeout=0.01))
 

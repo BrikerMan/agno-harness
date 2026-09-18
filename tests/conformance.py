@@ -22,7 +22,7 @@ from typing import Any
 
 from ag_ui.core import BaseEvent, EventType
 
-from agno_relay.core.sequencer import (
+from agno_harness.core.sequencer import (
     EventSequencer,
     ProtocolViolationError,
     SequencerMode,
