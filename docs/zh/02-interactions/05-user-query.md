@@ -4,7 +4,7 @@
 
 **在交给 `agent.arun(input=)` 之前**，把这一轮包成两块：`<user-query>` 只有用户原话；时间、发送人、渠道放进 `<context>`。时间跟着这一轮进 Agno 历史，后面问「下午那件事」才答得上。前端只要取 `<user-query>` 的 inner text，不用再拆括号。
 
-`UserQueryBuilder` 默认开。
+`UserQueryBuilder` 始终开启，没有开关。
 
 ---
 
@@ -35,13 +35,11 @@
 
 ## 默认行为
 
-`AgentRuntime` 默认 `enable_user_query=True`。Relay 把 `sent_at` / `sender_name` / `platform` / `is_direct_message` / 附件提取写进 `metadata`；Web 没有渠道时间时，用请求到达的此刻。
+`AgentRuntime` 始终包装。Relay 把 `sent_at` / `sender_name` / `platform` / `is_direct_message` / 附件提取写进 `metadata`；Web 没有渠道时间时，用请求到达的此刻。
 
 已经是 `<user-query>` 开头的内容不会再包一层。HITL 恢复不走这层。
 
-```python
-runtime = AgentRuntime(agent=agent, enable_user_query=False)
-```
+只在要换插件或时区时传 `user_query_builder=`。没有关闭选项。
 
 ---
 

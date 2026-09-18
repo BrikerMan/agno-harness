@@ -4,7 +4,7 @@
 
 本章为你盘点这些核心进阶武器，包括 **发给模型的用户请求（时间戳）**、**文档附件 OCR 解析**、**自主插话（Chime-in）策略**、**全链路彩色可观测日志** 与 **PostgreSQL 原生 JSONB 审计链**。
 
-发给 LLM 的用户请求为什么要拼时间，见 [User Query Envelope](../02-interactions/05-user-query.md)。默认已开，一般不用再配。
+发给 LLM 的用户请求为什么要拼时间，见 [User Query Envelope](../02-interactions/05-user-query.md)。始终开启，一般不用再配。
 
 ---
 

@@ -83,9 +83,10 @@ async def test_runtime_wraps_arun_input():
 
 
 @pytest.mark.asyncio
-async def test_runtime_can_disable_wrap():
+async def test_runtime_always_wraps():
     agent = FakeAgent([content("ok"), run_completed()])
-    runtime = AgentRuntime(agent=agent, enable_user_query=False)
+    runtime = AgentRuntime(agent=agent)
     async for _ in runtime.stream_events(make_input(text="plain")):
         pass
-    assert agent.last_kwargs["input"] == "plain"
+    prompt = agent.last_kwargs["input"]
+    assert prompt.startswith("<user-query>\nplain\n</user-query>")

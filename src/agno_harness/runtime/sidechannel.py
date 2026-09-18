@@ -20,9 +20,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Iterator
+from contextlib import nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
+
+from .scope import current_scope
 
 _CHANNEL: ContextVar[SideChannel | None] = ContextVar("better_agno_side_channel", default=None)
 
@@ -162,8 +165,19 @@ _EXHAUSTED = _Exhausted()
 
 
 async def _anext(iterator: Any) -> Any:
+    """Advance the parent stream inside the task that actually runs the agent.
+
+    ``enter_step`` lives here so OpenTelemetry context is current in *this*
+    task — the one AgnoInstrumentor attaches ``Agent.arun`` / LLM / tool
+    spans in. Wrapping the merge wait in the runner task cannot see those
+    attaches, and the next ``ensure_future`` would parent new spans on the
+    run root instead of on ``Agent.arun``.
+    """
+    scope = current_scope()
+    step = scope.enter_step() if scope is not None else nullcontext()
     try:
-        return await iterator.__anext__()
+        with step:
+            return await iterator.__anext__()
     except StopAsyncIteration:
         return _EXHAUSTED
 

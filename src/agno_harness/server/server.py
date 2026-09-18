@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 if TYPE_CHECKING:
     from ..app import RelayApp
     from ..core.streamui.schema import CardCatalog
+    from ..runtime.longrun import LongRunManager
     from ..runtime.runtime import AgentRuntime
     from ..transport.router import UserIdResolver
 
@@ -66,6 +67,7 @@ class RelayServer(FastAPI):
         expose_debug_routes: bool = False,
         cors_origins: list[str] | None = None,
         resolve_user_id: UserIdResolver | None = None,
+        long_runs: LongRunManager | None = None,
         **fastapi_kwargs: Any,
     ) -> None:
         if relay is not None:
@@ -93,6 +95,7 @@ class RelayServer(FastAPI):
         self.expose_debug_routes = expose_debug_routes
         self.cors_origins = cors_origins if cors_origins is not None else ["*"]
         self._user_id_resolver = resolve_user_id
+        self.long_runs = long_runs
 
         # Fail-fast validation on authentication in production
         if (
@@ -156,6 +159,13 @@ class RelayServer(FastAPI):
         """
         from ..transport.router import make_agui_router
 
+        if self.long_runs is None:
+            resume_mode = "none"
+        elif self.long_runs.can_follow_live:
+            resume_mode = "live"
+        else:
+            resume_mode = "history"
+
         # 1. Standard Health Check
         @self.get("/health", tags=["system"])
         async def health_check() -> dict[str, Any]:
@@ -164,6 +174,7 @@ class RelayServer(FastAPI):
                 "title": self.title,
                 "version": self.version,
                 "channels": list(self.relay.channels.keys()),
+                "resumeMode": resume_mode,
             }
 
         # 2. Mount AG-UI wire router
@@ -173,6 +184,7 @@ class RelayServer(FastAPI):
             resolve_user_id=self.resolve_user_id,
             allow_anonymous=self.allow_anonymous,
             expose_debug_routes=self.expose_debug_routes,
+            long_runs=self.long_runs,
         )
         self.include_router(agui_router)
 

@@ -1,6 +1,6 @@
 # 04. Refresh-and-resume: attach / cursor / ping / idle
 
-Read `X-Agui-Resume` from the response. Do not guess. `404` on `/runs/*` means `long_runs` is not mounted. Long jobs use `POST /agui?long-run=1` (alias `?detach=1`). Storage duties → [persistence](../../01-foundations/05-persistence-and-longruns/README.md).
+Read `X-Agui-Resume` from the response. Do not guess. Before the first send, `GET /health` returns `resumeMode` (`none` / `history` / `live`) — the [frontend-kit](../../../../resources/frontend-kit/README.md) will not attach on refresh if that field is missing. `404` on `/runs/*` means `long_runs` is not mounted. Long jobs use `POST /agui?long-run=1` (alias `?detach=1`). Storage duties → [persistence](../../01-foundations/05-persistence-and-longruns/README.md).
 
 | | `X-Agui-Resume: none` | `history` | `live` |
 | --- | --- | --- | --- |

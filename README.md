@@ -101,7 +101,7 @@ Index: [docs/en/README.md](docs/en/README.md) · [docs/zh/README.md](docs/zh/REA
 | You are…                    | Start here                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Compression / todos / cards | [Cookbook](docs/en/00-agent-cookbook/README.md) → [compression](docs/en/02-interactions/04-compression-and-sealing/README.md) · [todos](docs/en/02-interactions/03-todo/README.md) · [cards](docs/en/02-interactions/01-class-first-cards.md) |
-| Web refresh-and-resume      | [Web React](docs/en/03-clients/01-web-react/README.md) · [attach](docs/en/03-clients/01-web-react/04-attach-and-longrun.md) |
+| Web refresh-and-resume      | [Web React](docs/en/03-clients/01-web-react/README.md) · [frontend-kit](resources/frontend-kit/README.md) · [attach](docs/en/03-clients/01-web-react/04-attach-and-longrun.md) |
 | Lark / Teams                | [Lark](docs/en/00-agent-cookbook/04-lark-feishu-agent.md) · [Teams](docs/en/00-agent-cookbook/03-teams-bot-agent.md)        |
 | HITL / multi-agent          | [HITL](docs/en/02-interactions/02-hitl-and-actions/README.md) · [delegation](docs/en/02-interactions/06-multi-agent-delegation.md) |
 

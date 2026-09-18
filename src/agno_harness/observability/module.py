@@ -72,6 +72,8 @@ SESSION_ID = "session.id"
 USER_ID = "user.id"
 INPUT_VALUE = "input.value"
 OUTPUT_VALUE = "output.value"
+OPENINFERENCE_SPAN_KIND = "openinference.span.kind"
+SPAN_KIND_CHAIN = "CHAIN"
 
 #: The delivery-layer facts, namespaced under ``agui`` because they are this
 #: project's to define and nobody else's.
@@ -156,6 +158,7 @@ class ObservabilityModule(Module):
             USER_ID: run.user_id or "",
             THREAD_ID: run.thread_id,
             RUN_ID: run.run_id,
+            OPENINFERENCE_SPAN_KIND: SPAN_KIND_CHAIN,
         }
         if run.user_text:
             attributes[INPUT_VALUE] = run.user_text
@@ -267,8 +270,20 @@ def turn_run_span_name(agent_name: str | None) -> str:
 
 
 def _make_step_context(span: Span) -> Callable[[], AbstractContextManager[Any]]:
-    """A factory for "make this span current", entered once per agent step."""
-    context = trace.set_span_in_context(span)
+    """A factory for "make this span current", entered once per agent step.
+
+    The first step attaches the run span so ``Agent.arun`` nests under it.
+    AgnoInstrumentor then attaches that agent span inside the parent task.
+    The next step must resume *Agent.arun*, not the run root (or LLM / tool
+    spans become siblings) and not a grandchild LLM (or the next model call
+    nests under the previous one).
+
+    So after each step we promote resume only when the current span is a
+    still-recording **direct child** of the run span. On the way out we
+    restore the pre-step context so nothing leaks into the stream consumer.
+    """
+    run_id = span.get_span_context().span_id
+    resume = trace.set_span_in_context(span)
 
     @contextmanager
     def enter() -> Iterator[None]:
@@ -278,11 +293,16 @@ def _make_step_context(span: Span) -> Callable[[], AbstractContextManager[Any]]:
         # raises ``ValueError`` (different ``contextvars.Context``), and the
         # public ``detach()`` logs that as ``Failed to detach context`` on
         # every chunk. Setting the previous context back is the restore.
+        nonlocal resume
         previous = otel_context.get_current()
-        otel_context.attach(context)
+        otel_context.attach(resume)
         try:
             yield
         finally:
+            current = trace.get_current_span()
+            parent = getattr(current, "parent", None)
+            if current.is_recording() and parent is not None and parent.span_id == run_id:
+                resume = trace.set_span_in_context(current)
             otel_context.attach(previous)
 
     return enter

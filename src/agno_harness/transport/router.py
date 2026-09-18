@@ -8,6 +8,7 @@ the debug endpoints the frontend inspector reads::
 Routes
 ------
 ``POST   /agui``                       run the agent, stream AG-UI SSE
+``GET    /health``                     ``{status, resumeMode}`` when ``include_health=True``
 ``GET    /threads``                    list threads, newest first
 ``GET    /threads/{id}/messages``      replay a thread
 ``GET    /threads/{id}/frames?after=`` replay a thread as stored frames
@@ -94,6 +95,7 @@ def make_agui_router(
     allow_anonymous: bool | None = None,
     expose_debug_routes: bool = False,
     long_runs: LongRunManager | None = None,
+    include_health: bool = False,
 ) -> APIRouter:
     """Build the router for one runtime.
 
@@ -112,6 +114,12 @@ def make_agui_router(
     ``long_runs`` adds the detach, attach and abort routes. Without it those
     routes do not exist at all, rather than existing and failing — a 404 on the
     route is a much clearer signal than a 500 halfway through a stream.
+
+    ``include_health`` mounts ``GET /health`` with ``resumeMode``. The React kit
+    reads that field before the first send; a missing value is treated as
+    ``none`` and refresh-and-resume never attaches. Default off so a host that
+    already has ``/health`` is not doubled. ``make_relay_router`` always
+    advertises ``resumeMode`` on its own health route.
     """
     if allow_anonymous is None:
         # If resolve_user_id is omitted on make_agui_router, default to anonymous with warning
@@ -128,6 +136,12 @@ def make_agui_router(
     router = APIRouter(prefix=prefix, tags=list(tags or ["agui"]))
     encoder = EventEncoder()
     resume = _resume_mode(runtime, long_runs)
+
+    if include_health:
+
+        @router.get("/health", name="agui_health", tags=["system"])
+        async def agui_health() -> dict[str, Any]:
+            return {"status": "healthy", "resumeMode": resume.value}
 
     def _user(request: Request) -> str | None:
         if resolve_user_id is not None:
@@ -485,6 +499,7 @@ def make_relay_router(
             return {
                 "status": "healthy",
                 "channels": channels,
+                "resumeMode": _resume_mode(runtime, long_runs).value,
             }
 
     agui_router = make_agui_router(

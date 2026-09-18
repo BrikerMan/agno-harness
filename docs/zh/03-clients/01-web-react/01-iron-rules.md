@@ -2,6 +2,8 @@
 
 协议不提供、产品自己做、不要假装底座有：消息编辑 / 重新生成、会话分叉、附件多模态、语音、虚拟列表、每 token 性能优化。
 
+可运行的协议层是 [`frontend-kit/`](../../../../resources/frontend-kit/README_zh.md)。复制它。不要自己再写一遍 `applyEvent`。
+
 ## 五条
 
 1. **一个 `applyEvent`，live 和 replay 共用。** 禁止从 Agno `GET /threads/{id}/messages` 重建再自己分组。

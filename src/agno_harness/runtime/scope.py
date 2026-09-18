@@ -107,7 +107,7 @@ class RunScope:
         return self.data.setdefault(name, {})
 
     def enter_step(self) -> AbstractContextManager[Any]:
-        """Wrap one step of the agent's execution — the wait for its next chunk.
+        """Wrap one step of the agent's execution — its own ``__anext__``.
 
         A caller that needs ambient state established while the *agent* runs,
         but not while the rest of the pipeline does, sets ``step_context`` and
@@ -115,11 +115,15 @@ class RunScope:
         exists today: it makes the run's span current so spans opened by the
         agent's own instrumentation nest inside it.
 
+        This must run *inside* the task that consumes the agent, not around
+        the merge that races it against the side channel. ``merge_side_channel``
+        spawns a fresh Task per parent chunk; ContextVars copied at spawn time
+        are the only ones AgnoInstrumentor will see.
+
         Per step rather than once around the whole stream, because the runner
         is an async generator and Python has no per-generator context: state
         established inside one leaks into whoever is consuming it, and two
-        concurrent runs end up nested in each other. Entering and leaving
-        around a single ``await`` keeps it inside the task that owns the run.
+        concurrent runs end up nested in each other.
         """
         return self.step_context() if self.step_context is not None else nullcontext()
 

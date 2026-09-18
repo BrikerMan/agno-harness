@@ -1,6 +1,6 @@
 # 04. 刷新续写：attach / cursor / ping / idle
 
-启动先读响应头 `X-Agui-Resume`。不要猜。`404` 在 `/runs/*` 上表示没挂 `long_runs`。长任务带 `POST /agui?long-run=1`（兼容 `?detach=1`）。存储职责 → [持久化](../../01-foundations/05-persistence-and-longruns/README.md)。
+启动先读响应头 `X-Agui-Resume`。不要猜。第一次发送前 `GET /health` 返回 `resumeMode`（`none` / `history` / `live`）——缺这个字段，[frontend-kit](../../../../resources/frontend-kit/README_zh.md) 刷新不会 attach。`404` 在 `/runs/*` 上表示没挂 `long_runs`。长任务带 `POST /agui?long-run=1`（兼容 `?detach=1`）。存储职责 → [持久化](../../01-foundations/05-persistence-and-longruns/README.md)。
 
 | | `X-Agui-Resume: none` | `history` | `live` |
 | --- | --- | --- | --- |

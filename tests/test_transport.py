@@ -268,6 +268,29 @@ class TestLongRunRoutes:
         client, _ = make_client()
         assert post_run(client).headers[RESUME_HEADER] == "none"
 
+    def test_health_is_opt_in_and_advertises_resume_mode(self):
+        client, _ = make_client()
+        assert client.get("/health").status_code == 404
+
+        log = InMemoryRunEventLog()
+        runtime = AgentRuntime(
+            agent=FakeAgent([content("hi"), run_completed()]),
+            stores=Stores(event_log=log),
+        )
+        manager = LongRunManager(runtime, log=log)
+        app = FastAPI()
+        app.include_router(
+            make_agui_router(
+                runtime,
+                long_runs=manager,
+                include_health=True,
+                allow_anonymous=True,
+            )
+        )
+        body = TestClient(app).get("/health").json()
+        assert body["status"] == "healthy"
+        assert body["resumeMode"] == "live"
+
     def test_active_runs_are_listed(self):
         client, _ = self.long_run_client()
         client.post("/agui?detach=1", json=_payload())

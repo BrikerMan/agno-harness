@@ -68,6 +68,19 @@ from agno_harness import ObservabilityModule
 runtime.register_module(ObservabilityModule().bind_agent(agent))
 ```
 
+Expected tree (Langfuse / any OTLP backend):
+
+```text
+<agent-name>.turn-run                 CHAIN  — user-facing input/output, TTFT
+  └── <Agent>.arun                    AGENT  — constructed prompt, tools list
+        ├── <Model>.ainvoke_stream    LLM
+        └── delegate_subagent         TOOL
+              └── <Child>.arun        AGENT  — nested work, not a second turn-run
+                    └── <Model>.ainvoke_stream  LLM
+```
+
+LLM / tool spans hang **under** `Agent.arun`. A sub-agent hangs **under** the delegating tool. The child's `*.arun` is AgnoInstrumentor; ObservabilityModule does not open a second `*.turn-run`.
+
 - **Do not** put a run id or UUID in the name. Backends bucket by span name; a unique name per run is the same as no grouping.
 - Put `run_id`, `thread_id`, `user_id`, and `channel_id` on **attributes**.
 - Pass `span_name=` only when you need to split kinds of conversation (DM vs group). That callback must stay low-cardinality too.

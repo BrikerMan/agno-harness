@@ -2,6 +2,8 @@
 
 You can ship a product shell without having seen this protocol before. Protocol facts and product work are written separately.
 
+**Reference client:** copy [`frontend-kit/`](../../../../resources/frontend-kit/README.md) (`applyEvent` + `useAguiChat`). Do not rewrite the reducer. Product chrome (sidebar, Composer, cards) stays yours.
+
 **Refresh-and-resume / SSE keepalive:** start at [04 attach](04-attach-and-longrun.md). Storage → [persistence](../../01-foundations/05-persistence-and-longruns/README.md). HITL → [web-resume](../../02-interactions/02-hitl-and-actions/03-web-resume.md). Todo sidebar → [03-todo](../../02-interactions/03-todo/README.md). Cards → [01 Class-First](../../02-interactions/01-class-first-cards.md).
 
 Zero-change integration and DevTools: [layer 3 / 01](../../04-deep-dive-and-faq/01-react-zero-code-integration.md).

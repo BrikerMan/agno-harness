@@ -48,7 +48,7 @@ Cookbook index: [00-agent-cookbook/README.md](00-agent-cookbook/README.md)
 
 ### 2.3 Channels
 
-1. [01 Web / React](03-clients/01-web-react/README.md) — [01 Iron rules](03-clients/01-web-react/01-iron-rules.md) · [02 Shell](03-clients/01-web-react/02-thread-shell.md) · [03 Stream and scroll](03-clients/01-web-react/03-stream-and-scroll.md) · [04 Attach and long-run](03-clients/01-web-react/04-attach-and-longrun.md) · [05 HITL / cards / DevTools](03-clients/01-web-react/05-hitl-cards-devtools.md)
+1. [01 Web / React](03-clients/01-web-react/README.md) — copy [frontend-kit](../../resources/frontend-kit/README.md) · [01 Iron rules](03-clients/01-web-react/01-iron-rules.md) · [02 Shell](03-clients/01-web-react/02-thread-shell.md) · [03 Stream and scroll](03-clients/01-web-react/03-stream-and-scroll.md) · [04 Attach and long-run](03-clients/01-web-react/04-attach-and-longrun.md) · [05 HITL / cards / DevTools](03-clients/01-web-react/05-hitl-cards-devtools.md)
 2. [02 CLI](03-clients/02-cli-terminal.md)
 3. [03 Teams](03-clients/03-teams-adapter.md)
 4. [04 Lark / Feishu](03-clients/04-lark-adapter.md)

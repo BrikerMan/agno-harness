@@ -4,7 +4,7 @@ The model has no clock. A system line that says "today is Friday" is not enough:
 
 **Before** `agent.arun(input=)`, the turn is two blocks: `<user-query>` is the user's words only; time, speaker, and channel go in `<context>`. The time travels with the turn in Agno history, so "that meeting this afternoon" still has a wall-clock. The frontend takes the inner text of `<user-query>` — no bracket parsing.
 
-`UserQueryBuilder` is on by default.
+`UserQueryBuilder` is always on. It is not a switch.
 
 ---
 
@@ -35,13 +35,11 @@ Timezone is only `AGNO_HARNESS_TIMEZONE` (IANA, e.g. `Asia/Shanghai`). If unset,
 
 ## Defaults
 
-`AgentRuntime` sets `enable_user_query=True`. Relay fills `metadata` with `sent_at`, `sender_name`, `platform`, `is_direct_message`, and extracted attachments. On Web, if the channel sent no time, the request's arrival time is used.
+`AgentRuntime` always wraps. Relay fills `metadata` with `sent_at`, `sender_name`, `platform`, `is_direct_message`, and extracted attachments. On Web, if the channel sent no time, the request's arrival time is used.
 
 Text that already starts with `<user-query>` is not wrapped again. HITL resume skips this path.
 
-```python
-runtime = AgentRuntime(agent=agent, enable_user_query=False)
-```
+Pass `user_query_builder=` only to change plugins or timezone. There is no off switch.
 
 ---
 

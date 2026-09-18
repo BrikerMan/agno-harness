@@ -92,7 +92,7 @@ make run    # examples/01_cli_demo.py
 | 你在做 | 先读 |
 | --- | --- |
 | 压缩 / Todo / 卡片 | [菜谱](docs/zh/00-agent-cookbook/README.md) → [压缩](docs/zh/02-interactions/04-compression-and-sealing/README.md) · [Todo](docs/zh/02-interactions/03-todo/README.md) · [卡片](docs/zh/02-interactions/01-class-first-cards.md) |
-| Web 刷新续写 | [Web React](docs/zh/03-clients/01-web-react/README.md) · [attach](docs/zh/03-clients/01-web-react/04-attach-and-longrun.md) |
+| Web 刷新续写 | [Web React](docs/zh/03-clients/01-web-react/README.md) · [frontend-kit](resources/frontend-kit/README_zh.md) · [attach](docs/zh/03-clients/01-web-react/04-attach-and-longrun.md) |
 | 飞书 / Teams | [飞书](docs/zh/00-agent-cookbook/04-lark-feishu-agent.md) · [Teams](docs/zh/00-agent-cookbook/03-teams-bot-agent.md) |
 | HITL / 多 Agent | [HITL](docs/zh/02-interactions/02-hitl-and-actions/README.md) · [委托](docs/zh/02-interactions/06-multi-agent-delegation.md)
 

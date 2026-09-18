@@ -21,7 +21,13 @@ from ag_ui.core import RunAgentInput
 from agno.os.interfaces.agui.input import extract_context, extract_media, extract_user_input
 from agno.run.base import RunContext
 
-from ..core.prompt import QueryTurn, UserQueryBuilder, is_user_query_envelope, parse_sent_at
+from ..core.prompt import (
+    QueryTurn,
+    UserQueryBuilder,
+    default_builder,
+    is_user_query_envelope,
+    parse_sent_at,
+)
 from .hitl import client_tool_functions, detect_resume, resume_paused_run
 from .replay import last_user_text
 from .scope import RunScope, bind_scope
@@ -38,6 +44,9 @@ class AgentRunner:
     enable_subagent_streaming:
         Let tools forward a sub-agent's chunks into this run via ``substream``.
         With it off, no side channel is bound and ``substream`` is a no-op.
+    user_query_builder:
+        Override the default :class:`UserQueryBuilder`. Wrapping the latest
+        user turn as ``<user-query>`` plus ``<context>`` is always on.
     """
 
     def __init__(
@@ -49,7 +58,7 @@ class AgentRunner:
     ) -> None:
         self.agent = agent
         self.enable_subagent_streaming = enable_subagent_streaming
-        self.user_query_builder = user_query_builder
+        self.user_query_builder = user_query_builder or default_builder()
 
     def build_run_context(self, run_input: RunAgentInput, scope: RunScope) -> RunContext:
         """Assemble Agno's run context from the scope.
@@ -89,8 +98,11 @@ class AgentRunner:
             # Bind the side channel and scope only while waiting on the agent/tools — never
             # across ``yield`` to the HTTP consumer. Holding a ContextVar across
             # an async-gen yield breaks on client disconnect (Token created in a
-            # different Context).
-            with scope.enter_step(), bind_channel(bound), bind_scope(scope):
+            # different Context). ``enter_step`` is *not* here: the agent runs
+            # in the parent task ``merge_side_channel`` spawns, and that task
+            # enters the step around ``__anext__`` so LLM / tool / sub-agent
+            # spans nest under ``Agent.arun``.
+            with bind_channel(bound), bind_scope(scope):
                 try:
                     item = await merged.__anext__()
                 except StopAsyncIteration:
@@ -132,9 +144,6 @@ class AgentRunner:
         )
 
     async def _wrap_user_query(self, messages: Any, scope: RunScope) -> None:
-        builder = self.user_query_builder
-        if builder is None:
-            return
         raw = last_user_text(messages)
         if not raw or is_user_query_envelope(raw):
             return
@@ -144,7 +153,7 @@ class AgentRunner:
         attachments = meta.get("attachments_text")
         if attachments:
             extras["attachments_text"] = attachments
-        envelope = await builder.build(
+        envelope = await self.user_query_builder.build(
             QueryTurn(
                 text=raw,
                 sent_at=sent_at,

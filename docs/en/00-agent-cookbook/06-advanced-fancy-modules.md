@@ -4,7 +4,7 @@ Besides single-chat and multi-channel sessions, `agno-harness` ships a set of â€
 
 This chapter covers **the user request sent to the model (with a timestamp)**, **attachment OCR**, **chime-in policy**, **colored observability logs**, and a **PostgreSQL native JSONB audit trail**.
 
-Why the user request sent to the LLM includes time: [User Query Envelope](../02-interactions/05-user-query.md). It is on by default; you usually do not need to configure it.
+Why the user request sent to the LLM includes time: [User Query Envelope](../02-interactions/05-user-query.md). It is always on; you usually do not need to configure it.
 
 ---
 

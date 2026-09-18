@@ -2,7 +2,7 @@
 
 把 Agent 挂到 FastAPI，浏览器用 SSE 看打字机输出。这一章**只跑通服务**。卡片、`ItemSchema`、侧栏 Todo 后面再接。
 
-产品壳五步：[Web / React](../03-clients/01-web-react/README.md)。
+产品壳五步：[Web / React](../03-clients/01-web-react/README.md)。复制 [frontend-kit](../../../../resources/frontend-kit/README_zh.md)（`useAguiChat`）；不要重写 `applyEvent`。
 
 ---
 
@@ -160,7 +160,7 @@ uv run python web_agent_server.py
 
 | 下一步 | 读 |
 | --- | --- |
-| 产品前端 | [Web 五步](../03-clients/01-web-react/README.md) |
+| 产品前端 | [frontend-kit](../../../../resources/frontend-kit/README_zh.md) · [Web 五步](../03-clients/01-web-react/README.md) |
 | 装配 Agent（工具、hook、parser） | [07 写一个 Agent](../01-foundations/07-writing-an-agent.md) |
 | 卡片 | [01 Class-First](../02-interactions/01-class-first-cards.md) |
 | Todo / 长文档 / 压缩 | [03 Todo](../02-interactions/03-todo/README.md) · [08 Artifact](../02-interactions/08-streaming-artifacts.md) · [04 压缩](../02-interactions/04-compression-and-sealing/README.md) |

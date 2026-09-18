@@ -68,6 +68,19 @@ from agno_harness import ObservabilityModule
 runtime.register_module(ObservabilityModule().bind_agent(agent))
 ```
 
+Expected tree (Langfuse / any OTLP backend):
+
+```text
+<agent-name>.turn-run                 CHAIN  — 用户可见的 input/output、TTFT
+  └── <Agent>.arun                    AGENT  — 拼好的 prompt、工具列表
+        ├── <Model>.ainvoke_stream    LLM
+        └── delegate_subagent         TOOL
+              └── <Child>.arun        AGENT  — 嵌套工作，不是第二条 turn-run
+                    └── <Model>.ainvoke_stream  LLM
+```
+
+LLM / 工具 span 挂在 `Agent.arun` **下面**。子 agent 挂在委派它的 **工具下面**。子 agent 的 `*.arun` 来自 AgnoInstrumentor；ObservabilityModule 不会再开一条 `*.turn-run`。
+
 - **不要**把 run_id / UUID 写进名字。Langfuse / OTel 按 Span Name 分桶，名字一变一桶，看板就废了。
 - `run_id`、`thread_id`、`user_id`、`channel_id` 只进 **Attribute**。
 - 只有要把几种会话拆开看时才传 `span_name=`（例如 DM vs 群）；回调本身也必须低基数。

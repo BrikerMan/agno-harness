@@ -33,6 +33,7 @@ agui_router = make_agui_router(
     long_runs=long_runs,
     resolve_user_id=resolve_local_user,
     expose_debug_routes=True,
+    include_health=True,
 )
 app.include_router(agui_router)
 app.include_router(agui_router, prefix="/api")
@@ -72,7 +73,7 @@ app.include_router(
 ```
 
 ### 挂载后自动拥有的能力：
-- `GET /agent/health`：就绪探针，汇报网关状态及当前加载的 Channel 列表；
+- `GET /agent/health`：就绪探针，`{ status, channels, resumeMode }`（`none` / `history` / `live`）。React kit 第一次发送前读 `resumeMode`。
 - `POST /agent/agui`：标准 AG-UI SSE 协议通信管道；
 - `GET /agent/threads`：基于当前登录用户隔离的会话列表；
 - `GET /agent/threads/{id}/messages`：历史消息重放；

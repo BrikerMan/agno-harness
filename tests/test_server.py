@@ -47,6 +47,7 @@ def test_relay_server_basic_and_health(mock_runtime):
     data = response.json()
     assert data["status"] == "healthy"
     assert "agno-harness" in data["title"]
+    assert data["resumeMode"] == "none"
 
 
 def test_relay_server_subclassing_and_user_resolver(mock_runtime):

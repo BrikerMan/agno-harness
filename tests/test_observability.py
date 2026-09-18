@@ -206,6 +206,94 @@ class TestNesting:
         assert set(spans) == {"demo.turn-run", "Agent.run"}
         assert spans["Agent.run"].parent.span_id == spans["demo.turn-run"].context.span_id
         assert spans["Agent.run"].context.trace_id == spans["demo.turn-run"].context.trace_id
+        assert spans["demo.turn-run"].attributes["openinference.span.kind"] == "CHAIN"
+
+    async def test_spans_opened_after_the_first_yield_nest_under_the_agent(
+        self, provider, exporter
+    ):
+        """AgnoInstrumentor attaches Agent.arun once, then yields before the model.
+
+        Re-attaching the turn-run root on the next ``enter_step`` makes the LLM
+        span a sibling of the agent. Resume the innermost context instead so
+        the tree is turn-run → Agent.run → LLM, not turn-run → {Agent, LLM}.
+        """
+        tracer = provider.get_tracer("fake-agno")
+
+        class InstrumentedAgent(FakeAgent):
+            async def _stream(self):
+                with tracer.start_as_current_span("Agent.run"):
+                    yield content("hi")
+                    with tracer.start_as_current_span("OpenAIChat.ainvoke_stream"):
+                        yield content(" there")
+                    with tracer.start_as_current_span("OpenAIChat.ainvoke_stream.2"):
+                        yield content(" again")
+                    yield run_completed()
+
+        agent = InstrumentedAgent()
+        agent.name = "demo"
+        runtime = AgentRuntime(agent=agent)
+        runtime.register_module(ObservabilityModule(tracer_provider=provider).bind_agent(agent))
+        await collect(runtime.stream_events(make_input()))
+
+        spans = spans_by_name(exporter)
+        run = spans["demo.turn-run"]
+        agent_span = spans["Agent.run"]
+        llm = spans["OpenAIChat.ainvoke_stream"]
+        llm2 = spans["OpenAIChat.ainvoke_stream.2"]
+        assert agent_span.parent.span_id == run.context.span_id
+        assert llm.parent.span_id == agent_span.context.span_id
+        assert llm2.parent.span_id == agent_span.context.span_id
+
+    async def test_a_sub_agent_nests_under_the_delegating_tool(self, provider, exporter):
+        """Child Agent.arun hangs under the tool, not as a sibling of the parent.
+
+        ``delegate_subagent`` runs inside the parent's still-open ``__anext__``,
+        so the child's spans must see the tool span as current. The user-facing
+        turn stays one CHAIN root — there is no second ``*.turn-run``.
+        """
+        tracer = provider.get_tracer("fake-agno")
+
+        class Reviewer(FakeAgent):
+            async def _stream(self):
+                with tracer.start_as_current_span("Reviewer.arun"):
+                    with tracer.start_as_current_span("OpenAIChat.ainvoke_stream"):
+                        yield content("looks wrong")
+                    yield run_completed()
+
+        reviewer = Reviewer()
+        reviewer.name = "reviewer"
+
+        class Coordinator(FakeAgent):
+            async def _stream(self):
+                from agno_harness import substream
+
+                with tracer.start_as_current_span("Coordinator.arun"):
+                    yield content("delegating")
+                    with tracer.start_as_current_span("delegate_subagent"):
+                        async with substream("reviewer", description="Reviewing add()") as emit:
+                            async for chunk in reviewer.arun(stream=True):
+                                await emit(chunk)
+                    yield content("done")
+                    yield run_completed()
+
+        coordinator = Coordinator()
+        coordinator.name = "Coordinator"
+        runtime = AgentRuntime(agent=coordinator)
+        runtime.register_module(
+            ObservabilityModule(tracer_provider=provider).bind_agent(coordinator)
+        )
+        await collect(runtime.stream_events(make_input()))
+
+        spans = spans_by_name(exporter)
+        run = spans["coordinator.turn-run"]
+        parent_agent = spans["Coordinator.arun"]
+        tool = spans["delegate_subagent"]
+        child_agent = spans["Reviewer.arun"]
+        llm = spans["OpenAIChat.ainvoke_stream"]
+        assert parent_agent.parent.span_id == run.context.span_id
+        assert tool.parent.span_id == parent_agent.context.span_id
+        assert child_agent.parent.span_id == tool.context.span_id
+        assert llm.parent.span_id == child_agent.context.span_id
 
     async def test_two_runs_at_once_do_not_nest_inside_each_other(self, provider, exporter):
         """Two roots, two traces, no leakage between them.

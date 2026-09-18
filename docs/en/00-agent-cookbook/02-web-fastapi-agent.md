@@ -2,7 +2,7 @@
 
 Mount the agent on FastAPI and watch tokens arrive over SSE. This chapter **only gets the service running**. Cards, `ItemSchema`, and a todo sidebar come later.
 
-Product shell: [Web / React](../03-clients/01-web-react/README.md).
+Product shell: [Web / React](../03-clients/01-web-react/README.md). Copy the [frontend-kit](../../../../resources/frontend-kit/README.md) (`useAguiChat`); do not rewrite `applyEvent`.
 
 ---
 
@@ -160,7 +160,7 @@ This page is **not** the product shell. Resume, sidebar, and stick-to-bottom are
 
 | Next | Read |
 | --- | --- |
-| Product frontend | [Web five steps](../03-clients/01-web-react/README.md) |
+| Product frontend | [frontend-kit](../../../../resources/frontend-kit/README.md) · [Web five steps](../03-clients/01-web-react/README.md) |
 | Assemble the agent (tools, hooks, parsers) | [07 Writing an agent](../01-foundations/07-writing-an-agent.md) |
 | Cards | [01 Class-First](../02-interactions/01-class-first-cards.md) |
 | Todos / long docs / compression | [03 Todos](../02-interactions/03-todo/README.md) · [08 Artifacts](../02-interactions/08-streaming-artifacts.md) · [04 Compression](../02-interactions/04-compression-and-sealing/README.md) |

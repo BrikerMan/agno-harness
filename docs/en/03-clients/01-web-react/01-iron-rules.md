@@ -2,6 +2,8 @@
 
 The protocol does not give you these; the product owns them. Do not pretend the base has: message edit / regenerate, thread fork, multimodal attachments, voice, virtual lists, per-token animation.
 
+The runnable protocol layer is [`frontend-kit/`](../../../../resources/frontend-kit/README.md). Copy it. Do not reimplement `applyEvent`.
+
 ## The five
 
 1. **One `applyEvent` for live and replay.** Do not rebuild from Agno `GET /threads/{id}/messages` and regroup yourself.

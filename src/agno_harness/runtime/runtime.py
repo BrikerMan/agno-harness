@@ -117,12 +117,10 @@ class AgentRuntime:
         Write a per-run JSONL of the chunk-to-event mapping here. Defaults to
         ``$AGNO_HARNESS_TRACE_DIR``, and to off when that is unset. See
         :mod:`agno_harness.runtime.tracing`.
-    enable_user_query:
-        Wrap the latest user turn as ``<user-query>`` plus ``<context>``
-        (time, speaker, channel) before ``agent.arun``. Off only when you
-        already wrap upstream.
     user_query_builder:
         Override the default :class:`UserQueryBuilder` (plugins / timezone).
+        Every run wraps the latest user turn as ``<user-query>`` plus
+        ``<context>`` (time, speaker, channel) before ``agent.arun``.
     """
 
     def __init__(
@@ -142,7 +140,6 @@ class AgentRuntime:
         sequencer_mode: SequencerMode = SequencerMode.REPAIR,
         record_chunks: int = 3,
         trace_dir: str | os.PathLike[str] | None = None,
-        enable_user_query: bool = True,
         user_query_builder: UserQueryBuilder | None = None,
     ) -> None:
         self.agent = agent
@@ -158,12 +155,9 @@ class AgentRuntime:
         self.record_chunks = record_chunks
         self.trace_dir = trace_dir
 
-        if user_query_builder is not None:
-            self.user_query_builder: UserQueryBuilder | None = user_query_builder
-        elif enable_user_query:
-            self.user_query_builder = default_builder(timezone=RelayConfig.timezone())
-        else:
-            self.user_query_builder = None
+        self.user_query_builder = user_query_builder or default_builder(
+            timezone=RelayConfig.timezone()
+        )
         self.runner = AgentRunner(
             agent,
             enable_subagent_streaming=enable_subagent_streaming,

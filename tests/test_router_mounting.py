@@ -60,6 +60,7 @@ def test_mount_relay_router_into_external_fastapi(mock_runtime):
     health_resp = client.get("/agent-relay/health")
     assert health_resp.status_code == 200
     assert health_resp.json()["status"] == "healthy"
+    assert health_resp.json()["resumeMode"] == "none"
 
     payload = make_input().model_dump(by_alias=True, mode="json")
 
@@ -213,3 +214,16 @@ def test_web_channel_does_not_conflict_with_make_relay_router(mock_runtime):
     resp = client.get("/health")
     assert resp.status_code == 200
     assert "web" in resp.json()["channels"]
+    assert resp.json()["resumeMode"] == "none"
+
+
+def test_health_resume_mode_is_live_when_long_runs_can_follow(mock_runtime):
+    from agno_harness.runtime.longrun import LongRunManager
+    from agno_harness.stores import InMemoryRunEventLog
+
+    log = InMemoryRunEventLog()
+    long_runs = LongRunManager(mock_runtime, log=log)
+    app = FastAPI()
+    app.include_router(make_relay_router(mock_runtime, allow_anonymous=True, long_runs=long_runs))
+    body = TestClient(app).get("/health").json()
+    assert body["resumeMode"] == "live"

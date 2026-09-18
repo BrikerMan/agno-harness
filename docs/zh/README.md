@@ -48,7 +48,7 @@
 
 ### 2.3 渠道
 
-1. [01 Web / React](03-clients/01-web-react/README.md) — [01 铁律](03-clients/01-web-react/01-iron-rules.md) · [02 外壳](03-clients/01-web-react/02-thread-shell.md) · [03 事件流与跟滚](03-clients/01-web-react/03-stream-and-scroll.md) · [04 刷新续写](03-clients/01-web-react/04-attach-and-longrun.md) · [05 HITL / 卡片 / DevTools](03-clients/01-web-react/05-hitl-cards-devtools.md)
+1. [01 Web / React](03-clients/01-web-react/README.md) — 复制 [frontend-kit](../../resources/frontend-kit/README_zh.md) · [01 铁律](03-clients/01-web-react/01-iron-rules.md) · [02 外壳](03-clients/01-web-react/02-thread-shell.md) · [03 事件流与跟滚](03-clients/01-web-react/03-stream-and-scroll.md) · [04 刷新续写](03-clients/01-web-react/04-attach-and-longrun.md) · [05 HITL / 卡片 / DevTools](03-clients/01-web-react/05-hitl-cards-devtools.md)
 2. [02 CLI](03-clients/02-cli-terminal.md)
 3. [03 Teams](03-clients/03-teams-adapter.md)
 4. [04 飞书 / Lark](03-clients/04-lark-adapter.md)

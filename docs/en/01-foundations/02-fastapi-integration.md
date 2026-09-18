@@ -34,6 +34,7 @@ agui_router = make_agui_router(
     long_runs=long_runs,
     resolve_user_id=resolve_local_user,
     expose_debug_routes=True,
+    include_health=True,
 )
 app.include_router(agui_router)
 app.include_router(agui_router, prefix="/api")
@@ -75,7 +76,7 @@ app.include_router(
 
 ### What the mount gives you
 
-- `GET /agent/health`: readiness probe; gateway status and loaded channels;
+- `GET /agent/health`: readiness probe; `{ status, channels, resumeMode }` (`none` / `history` / `live`). The React kit reads `resumeMode` before the first send.
 - `POST /agent/agui`: standard AG-UI SSE pipe;
 - `GET /agent/threads`: thread list isolated to the authenticated user;
 - `GET /agent/threads/{id}/messages`: history replay;
