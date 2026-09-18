@@ -1,5 +1,10 @@
 # 03. Persistence FAQ
 
+### Q0: Why two databases?
+
+Agno `db` is the next model turn. Harness `Stores` is the stream the user saw. Frames without Agno `db` look complete in the UI and then the model forgets. Agno `db` without Stores remembers in the prompt and loses cards on refresh. `AgentRuntime` refuses durable SQL Stores paired with a missing or in-memory Agno db unless `allow_ephemeral_agno_db=True`.
+
+
 ### Q1: After a refresh mid long-run, the user prompt vanished?
 
 Agno’s `AgentSession` is a **post-run transaction**: this turn’s Q&A hits SQL only after `arun()` finishes. Mid-run `GET /threads/{id}/messages` does not contain this prompt.

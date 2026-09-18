@@ -66,6 +66,7 @@ from .replay import last_user_text
 from .runner import AgentRunner
 from .scope import RunScope
 from .state import StateTracker
+from .storage_guard import check_history_pairing
 from .threads import ThreadService
 from .titles import generate_thread_title as _generate_thread_title
 from .tracing import RunTracer
@@ -91,6 +92,9 @@ class AgentRuntime:
         Optional :class:`~agno_harness.stores.Stores` for records Agno
         does not keep, chiefly injected ``CUSTOM`` events. Without it those
         events are live-only and will not survive a reload.
+    allow_ephemeral_agno_db:
+        Durable SQL harness stores require a persistent Agno ``db``. Set this
+        to opt into the half-pair (UI replay, model amnesia) — tests only.
     enable_reasoning_patch:
         Register the built-in reasoning parser, so thinking models that put
         their chain of thought on ``reasoning_content`` surface it live.
@@ -127,6 +131,7 @@ class AgentRuntime:
         db: Any = None,
         *,
         stores: Stores | None = None,
+        allow_ephemeral_agno_db: bool = False,
         catalog: CardCatalog | None = None,
         enable_reasoning_patch: bool = True,
         enable_compression_streaming: bool = True,
@@ -143,6 +148,7 @@ class AgentRuntime:
         self.agent = agent
         self.db = db if db is not None else getattr(agent, "db", None)
         self.stores = stores or Stores()
+        check_history_pairing(self.db, self.stores, allow_ephemeral_agno_db=allow_ephemeral_agno_db)
         self.catalog = catalog
         self.enable_streamui = enable_streamui
         if artifact_root_dir is None and workspace_dir is not None:

@@ -41,6 +41,29 @@ def _agui_text_delta(event: Any) -> str:
     return ""
 
 
+def _agui_reasoning_delta(event: Any) -> str:
+    event_type = getattr(event, "type", None)
+    type_name = getattr(event_type, "name", "") or str(event_type)
+    if (
+        event_type is EventType.REASONING_MESSAGE_CONTENT
+        or "REASONING_MESSAGE_CONTENT" in type_name
+    ):
+        return getattr(event, "delta", "") or ""
+    return ""
+
+
+def _agui_reasoning_closed(event: Any) -> bool:
+    event_type = getattr(event, "type", None)
+    type_name = getattr(event_type, "name", "") or str(event_type)
+    return event_type in {
+        EventType.REASONING_END,
+        EventType.REASONING_MESSAGE_END,
+    } or type_name in {
+        "REASONING_END",
+        "REASONING_MESSAGE_END",
+    }
+
+
 def _agui_type_name(event: Any) -> str:
     event_type = getattr(event, "type", None)
     return getattr(event_type, "name", "") or str(event_type)
@@ -649,6 +672,13 @@ class RelayApp:
                     _parse_tool_args(tool_args.get(ended_id, "")),
                     "ended",
                 )
+                continue
+            reasoning = _agui_reasoning_delta(agui_event)
+            if reasoning:
+                await channel.stream_reasoning(key, reasoning)
+                continue
+            if _agui_reasoning_closed(agui_event):
+                await channel.stream_reasoning(key, "", done=True)
                 continue
             delta = _agui_text_delta(agui_event)
             if not delta:

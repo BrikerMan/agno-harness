@@ -53,6 +53,12 @@ class BaseChannel(Channel, abc.ABC):
         """Default no-op incremental streaming chunk."""
         return None
 
+    async def stream_reasoning(
+        self, destination: ConversationKey, delta: str, *, done: bool = False
+    ) -> None:
+        """Default no-op live reasoning / thinking update."""
+        return None
+
     async def stream_tool(
         self,
         destination: ConversationKey,

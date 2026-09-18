@@ -28,7 +28,9 @@ class CLIChannel(BaseChannel):
         self._turn_has_output = False
         self._status: Status | None = None
         self._live: Live | None = None
+        self._live_kind: str | None = None
         self._stream_buf: list[str] = []
+        self._reasoning_buf: list[str] = []
         self._shown_tools: set[str] = set()
         self._turn_done = asyncio.Event()
         self._turn_done.set()
@@ -108,36 +110,87 @@ class CLIChannel(BaseChannel):
             padding=(0, 1),
         )
 
+    def _reasoning_panel(self, text: str, *, streaming: bool) -> Panel:
+        body = Text(text or "…", style="dim italic")
+        return Panel(
+            body,
+            title="[bold yellow]Reasoning[/bold yellow]",
+            subtitle="[dim]thinking[/dim]" if streaming else None,
+            border_style="yellow",
+            padding=(0, 1),
+        )
+
     def _finish_live(self) -> None:
         if self._live is None:
             return
-        text = "".join(self._stream_buf)
-        self._live.update(self._assistant_panel(text, streaming=False))
+        if self._live_kind == "reasoning":
+            text = "".join(self._reasoning_buf)
+            self._live.update(self._reasoning_panel(text, streaming=False))
+            self._reasoning_buf.clear()
+        else:
+            text = "".join(self._stream_buf)
+            self._live.update(self._assistant_panel(text, streaming=False))
+            self._stream_buf.clear()
+            self._streamed_text = False
         self._live.stop()
         self._live = None
-        self._stream_buf.clear()
-        self._streamed_text = False
+        self._live_kind = None
+
+    def _flush_reasoning_record(self) -> None:
+        if self._use_live() or not self._reasoning_buf:
+            return
+        self.console.print(self._reasoning_panel("".join(self._reasoning_buf), streaming=False))
+        self._reasoning_buf.clear()
+
+    def _update_live(self, kind: str, panel: Panel) -> None:
+        if self._live is not None and self._live_kind != kind:
+            self._finish_live()
+        if self._live is None:
+            self._live = Live(panel, console=self.console, refresh_per_second=16, transient=False)
+            self._live.start()
+            self._live_kind = kind
+            return
+        self._live.update(panel)
 
     async def stream_chunk(self, destination: ConversationKey, message_id: str, delta: str) -> None:
         """Typewriter-print a live token delta."""
         if not delta:
             return
+        self._flush_reasoning_record()
+        if self._live_kind == "reasoning":
+            self._finish_live()
         self._stop_status()
         self._turn_has_output = True
         self._streamed_text = True
         self._stream_buf.append(delta)
         text = "".join(self._stream_buf)
         if self._use_live():
-            panel = self._assistant_panel(text, streaming=True)
-            if self._live is None:
-                self._live = Live(
-                    panel, console=self.console, refresh_per_second=16, transient=False
-                )
-                self._live.start()
-            else:
-                self._live.update(panel)
+            self._update_live("assistant", self._assistant_panel(text, streaming=True))
             return
         self.console.print(delta, end="", highlight=False, markup=False)
+        file = getattr(self.console, "file", None)
+        if file is not None:
+            file.flush()
+
+    async def stream_reasoning(
+        self, destination: ConversationKey, delta: str, *, done: bool = False
+    ) -> None:
+        """Render model thinking in a dedicated Reasoning panel."""
+        if done:
+            self._flush_reasoning_record()
+            if self._live_kind == "reasoning":
+                self._finish_live()
+            return
+        if not delta:
+            return
+        self._stop_status()
+        self._turn_has_output = True
+        self._reasoning_buf.append(delta)
+        text = "".join(self._reasoning_buf)
+        if self._use_live():
+            self._update_live("reasoning", self._reasoning_panel(text, streaming=True))
+            return
+        self.console.print(delta, end="", style="dim italic", highlight=False, markup=False)
         file = getattr(self.console, "file", None)
         if file is not None:
             file.flush()
@@ -152,6 +205,7 @@ class CLIChannel(BaseChannel):
         status: str = "started",
     ) -> None:
         """Render a tool call as a Rich panel, including params when available."""
+        self._flush_reasoning_record()
         self._finish_live()
         if status == "started" and args is None:
             self._start_status(f"[magenta]Calling [bold]{name}[/bold]…[/magenta]")
@@ -223,6 +277,7 @@ class CLIChannel(BaseChannel):
             self._streamed_text = False
             self._turn_has_output = False
             self._stream_buf.clear()
+            self._reasoning_buf.clear()
             self._shown_tools.clear()
             self._start_status("[yellow]Thinking…[/yellow]")
             return

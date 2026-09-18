@@ -51,6 +51,7 @@ from .runner import AgentRunner
 from .runtime import AgentRuntime
 from .scope import RunScope
 from .state import StateTracker
+from .storage_guard import StoragePairingError
 from .threads import ThreadService
 from .titles import (
     EVENT_THREAD_TITLE,
@@ -97,6 +98,7 @@ __all__ = [
     "RunScope",
     "RunTracer",
     "StateTracker",
+    "StoragePairingError",
     "StreamUIModule",
     "SubAgentBus",
     "UIItem",

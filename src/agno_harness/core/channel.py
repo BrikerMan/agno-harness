@@ -51,6 +51,12 @@ class Channel(Protocol):
         """Throttled progressive update of an in-flight message."""
         ...
 
+    async def stream_reasoning(
+        self, destination: ConversationKey, delta: str, *, done: bool = False
+    ) -> None:
+        """Optional live reasoning / thinking update."""
+        ...
+
     async def stream_tool(
         self,
         destination: ConversationKey,

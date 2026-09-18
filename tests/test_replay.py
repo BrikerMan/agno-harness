@@ -349,6 +349,7 @@ class TestFrameReplay:
             agent=FakeAgent(chunks),
             stores=Stores(event_log=log),
             sequencer_mode=SequencerMode.AUDIT,
+            allow_ephemeral_agno_db=True,
         )
         manager = LongRunManager(runtime, log=log)
         await manager.start(make_input(thread_id=thread_id, run_id=run_id))
@@ -400,7 +401,11 @@ class TestFrameReplay:
 
     async def test_every_run_in_a_thread_comes_back_in_order(self):
         log = await sql_event_log()
-        runtime = AgentRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(
+            agent=FakeAgent([]),
+            stores=Stores(event_log=log),
+            allow_ephemeral_agno_db=True,
+        )
         manager = LongRunManager(runtime, log=log)
         for index, word in enumerate(("first", "second")):
             runtime.agent.chunks = [content(word), run_completed()]
@@ -420,7 +425,11 @@ class TestFrameReplay:
         from agno_harness import substream
 
         log = await sql_event_log()
-        runtime = AgentRuntime(agent=FakeAgent([]), stores=Stores(event_log=log))
+        runtime = AgentRuntime(
+            agent=FakeAgent([]),
+            stores=Stores(event_log=log),
+            allow_ephemeral_agno_db=True,
+        )
 
         async def parent_stream(**kwargs):
             async with substream("reviewer", description="Reviewing add()") as emit:

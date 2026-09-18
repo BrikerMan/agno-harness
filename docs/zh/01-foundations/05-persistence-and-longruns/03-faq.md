@@ -1,5 +1,10 @@
 # 03. 持久化 FAQ
 
+### Q0: 为什么要两套库？
+
+Agno `db` 给下一轮模型。Harness `Stores` 给用户看过的流。只有 frames、没有 Agno `db`：UI 像完整，模型失忆。只有 Agno `db`、没有 Stores：提示词记得，刷新丢卡片。Harness 已是持久 SQL、Agno `db` 缺失或内存时，`AgentRuntime` 拒绝启动，除非 `allow_ephemeral_agno_db=True`。
+
+
 ### Q1: 长任务刷新后，用户提问凭空消失？
 
 Agno 的 `AgentSession` 是 **post-run 事务**：整轮 `arun()` 结束才把本轮问答写入 SQL。中途去 `GET /threads/{id}/messages`，这一轮的用户句还不在。

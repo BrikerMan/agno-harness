@@ -1,5 +1,14 @@
 # 01. Dual storage
 
+Complete history is **Agno `db` + harness `Stores`**. Neither substitutes for the other.
+
+- **Agno `db`** (`SqliteDb` / `PostgresDb` on `Agent` and `AgentRuntime`) — next-turn messages. Without it the model starts each turn cold, even if frames are on disk.
+- **Harness `Stores`** — the stream the user saw. Without it `/threads/{id}/frames` cannot rebuild cards / tools / reasoning the way they were sent.
+
+If harness stores are durable SQL and Agno `db` is missing or in-memory, `AgentRuntime` raises `StoragePairingError` unless `allow_ephemeral_agno_db=True`.
+
+Inside harness stores there is a second split:
+
 - **Hot log** (`RedisRunEventLog`, or an in-process stand-in) — every AG-UI delta, a blocking tail, TTL. `?long-run=1` and `GET /runs/{id}/attach` read it. Do not store tokens in SQL.
 - **History archive** (SQL) — the folded event list after the run. Consecutive content deltas become one frame. `GET /threads/{id}/frames` reads it.
 

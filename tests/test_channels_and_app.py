@@ -144,7 +144,7 @@ async def test_cli_interactive_loop_runs_until_exit(monkeypatch):
 
     await app.start()
     try:
-        monkeypatch.setattr("builtins.input", lambda _: "/exit")
+        monkeypatch.setattr("builtins.input", lambda *_args, **_kwargs: "/exit")
         await cli.run_interactive_loop()
     finally:
         await app.stop()
@@ -245,6 +245,36 @@ async def test_cli_tool_panel_includes_params():
     assert "duckduckgo_search" in output
     assert "Python 3.13" in output
     assert "Here is what I found." in output
+
+
+@pytest.mark.asyncio
+async def test_cli_shows_reasoning_content():
+    runtime = AgentRuntime(
+        agent=FakeAgent(
+            [
+                content("", reasoning="Let me think about this."),
+                content("Here is the answer."),
+                run_completed(),
+            ]
+        )
+    )
+    app = RelayApp(runtime)
+    cli = CLIChannel(console=Console(record=True))
+    app.add_channel(cli)
+
+    outbound = await app.handle_event(
+        cli,
+        ChannelEvent(
+            event_id="reason-1",
+            key=ConversationKey(platform="cli", chat_id="c1", is_direct_message=True),
+            text="hi",
+        ),
+    )
+
+    output = cli.console.export_text()
+    assert outbound.text == "Here is the answer."
+    assert "Let me think about this." in output
+    assert "Here is the answer." in output
 
 
 def test_channel_instantiations_and_routers():

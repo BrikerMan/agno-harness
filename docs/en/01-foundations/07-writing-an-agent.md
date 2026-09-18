@@ -34,6 +34,8 @@ agent = Agent(
     telemetry=False,
 )
 runtime = AgentRuntime(agent=agent, db=db, catalog=catalog)
+# Complete history also needs harness Stores (SQL event_log / history_archive).
+# Durable Stores + a missing/in-memory Agno db raises StoragePairingError.
 runtime.on_post_run(make_thread_title_hook(runtime))
 runtime.on_post_run(make_checkpoint_hook(runtime))
 ```
