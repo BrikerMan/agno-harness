@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 from ag_ui.core import BaseEvent, CustomEvent, EventType
 
-from agno_harness import AgentRuntime, SequencerMode
+from agno_harness import AgentRuntime, CardCatalog, SequencerMode
 from agno_harness.runtime.module import Module, ModuleConflict, ModuleRegistry
 from agno_harness.runtime.modules.custom_events import CustomEventsModule
 from agno_harness.runtime.modules.streamui import StreamUIModule
@@ -242,6 +242,34 @@ class TestBracketsAlwaysClose:
         assert unmatched_brackets(events, runtime.modules) == {}
         end = customs(events, "ui.block.end")
         assert end and end[0].value["truncated"] is True
+
+    async def test_an_unclosed_block_at_run_end_invokes_complete_and_persists(self, tmp_path):
+        from agno_harness import ArtifactCard
+
+        completed_blocks = []
+        catalog = CardCatalog([ArtifactCard])
+
+        @catalog.on_complete("artifact")
+        async def on_artifact_complete(block, scope):
+            completed_blocks.append(block)
+            return {"salvaged": True}
+
+        runtime = AgentRuntime(
+            agent=FakeAgent(
+                [
+                    content('```stream-ui {"schema": "artifact", "filepath": "partial.txt"}\npartial content\n'),
+                    run_completed(),
+                ]
+            ),
+            catalog=catalog,
+            artifact_root_dir=tmp_path,
+        )
+        events = await collect(runtime.stream_events(make_input()))
+        end = customs(events, "ui.block.end")
+        assert end and end[0].value["truncated"] is True
+        assert end[0].value.get("salvaged") is True
+        assert len(completed_blocks) == 1
+        assert (tmp_path / "partial.txt").read_text(encoding="utf-8") == "partial content\n"
 
     async def test_a_run_that_dies_inside_a_delegation_still_closes_the_panel(self):
         from agno_harness import substream

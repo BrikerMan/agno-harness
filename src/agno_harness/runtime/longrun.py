@@ -148,6 +148,11 @@ class LongRunManager:
         record = await self.log.start_run(
             run_id, thread_id, user_id=user_id, **({"input": prompt} if prompt else {})
         )
+        with contextlib.suppress(Exception):
+            for old in await self.log.list_runs(thread_id, user_id=user_id):
+                if old.run_id != run_id and old.status is RunStatus.PAUSED:
+                    await self.log.set_status(old.run_id, RunStatus.FINISHED)
+
         # Opened here rather than inside the pump: the caller attaches straight
         # after this returns, and the pump's first line has not run yet.
         self._local.open(run_id)
@@ -163,6 +168,7 @@ class LongRunManager:
         status = RunStatus.FINISHED
         error: str | None = None
         beat = _Heartbeat(self.log, run_id, self.heartbeat_interval)
+        beat_task = asyncio.create_task(beat.run(), name=f"agui-beat-{run_id}")
 
         try:
             async for event in self.runtime.stream_events(run_input, user_id=user_id):
@@ -186,7 +192,6 @@ class LongRunManager:
                     and getattr(event, "name", "") == EVENT_RUN_CANCELLED
                 ):
                     status = RunStatus.ABORTED
-                await beat.maybe()
         except asyncio.CancelledError:
             status = RunStatus.ABORTED
             with contextlib.suppress(Exception):
@@ -201,6 +206,10 @@ class LongRunManager:
             logger.exception("detached run %s failed", run_id)
             status, error = RunStatus.ERROR, str(exc)
         finally:
+            beat.stop()
+            beat_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await beat_task
             with contextlib.suppress(Exception):
                 await self.log.set_status(run_id, status, **({"error": error} if error else {}))
             with contextlib.suppress(Exception):
@@ -413,19 +422,31 @@ class _LocalFanout:
 
 
 class _Heartbeat:
-    """Says "still alive" no more often than it has to."""
+    """Sends background heartbeats to the log periodically while active."""
 
     def __init__(self, log: RunEventLog, run_id: str, interval: float) -> None:
         self._log = log
         self._run_id = run_id
         self._interval = interval
-        self._next = 0.0
+        self._stop_event = asyncio.Event()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+
+    async def run(self) -> None:
+        with contextlib.suppress(Exception):
+            await self._log.heartbeat(self._run_id)
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.sleep(self._interval)
+            except asyncio.CancelledError:
+                break
+            if self._stop_event.is_set():
+                break
+            with contextlib.suppress(Exception):
+                await self._log.heartbeat(self._run_id)
 
     async def maybe(self) -> None:
-        now = asyncio.get_running_loop().time()
-        if now < self._next:
-            return
-        self._next = now + self._interval
         with contextlib.suppress(Exception):
             await self._log.heartbeat(self._run_id)
 

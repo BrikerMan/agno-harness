@@ -13,6 +13,7 @@ different event pipeline keeps this and replaces the translator.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -55,10 +56,12 @@ class AgentRunner:
         *,
         enable_subagent_streaming: bool = True,
         user_query_builder: UserQueryBuilder | None = None,
+        read_timeout: float | None = 300.0,
     ) -> None:
         self.agent = agent
         self.enable_subagent_streaming = enable_subagent_streaming
         self.user_query_builder = user_query_builder or default_builder()
+        self.read_timeout = read_timeout
 
     def build_run_context(self, run_input: RunAgentInput, scope: RunScope) -> RunContext:
         """Assemble Agno's run context from the scope.
@@ -104,9 +107,18 @@ class AgentRunner:
             # spans nest under ``Agent.arun``.
             with bind_channel(bound), bind_scope(scope):
                 try:
-                    item = await merged.__anext__()
+                    if self.read_timeout is not None:
+                        item = await asyncio.wait_for(
+                            merged.__anext__(), timeout=self.read_timeout
+                        )
+                    else:
+                        item = await merged.__anext__()
                 except StopAsyncIteration:
                     break
+                except asyncio.TimeoutError as exc:
+                    raise TimeoutError(
+                        f"Upstream model stream timed out after {self.read_timeout}s of inactivity"
+                    ) from exc
             yield item
 
     async def _open(

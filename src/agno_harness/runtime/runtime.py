@@ -141,6 +141,7 @@ class AgentRuntime:
         record_chunks: int = 3,
         trace_dir: str | os.PathLike[str] | None = None,
         user_query_builder: UserQueryBuilder | None = None,
+        read_timeout: float | None = 300.0,
     ) -> None:
         self.agent = agent
         self.db = db if db is not None else getattr(agent, "db", None)
@@ -162,6 +163,7 @@ class AgentRuntime:
             agent,
             enable_subagent_streaming=enable_subagent_streaming,
             user_query_builder=self.user_query_builder,
+            read_timeout=read_timeout,
         )
         self.inspectors = InspectorRegistry()
         self.threads = ThreadService(

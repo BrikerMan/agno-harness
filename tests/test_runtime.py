@@ -1032,3 +1032,25 @@ async def test_output_is_identical_however_the_text_is_chunked(chunk_size):
     assert text_of(events) == "Intro.\nOutro."
     lines = [e for e in customs(events) if e.name == "ui.item"]
     assert [e.value["data"] for e in lines] == [{"a": 1}, {"b": 2}]
+
+
+async def test_upstream_stream_read_timeout():
+    class StallingAgent:
+        def __init__(self):
+            self.db = None
+
+        def arun(self, *args, **kwargs):
+            return self._stream()
+
+        async def _stream(self):
+            yield content("starting...")
+            await asyncio.sleep(1.0)
+            yield content("never reached")
+            yield run_completed()
+
+    runtime = AgentRuntime(agent=StallingAgent(), read_timeout=0.1)
+    events = [event async for event in runtime.stream_events(make_input())]
+    types = [e.type.value if hasattr(e.type, "value") else str(e.type) for e in events]
+    assert "RUN_ERROR" in types
+    error_event = next(e for e in events if getattr(e, "type", None) == EventType.RUN_ERROR)
+    assert "timed out after 0.1s" in error_event.message

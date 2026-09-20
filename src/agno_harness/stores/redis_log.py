@@ -23,14 +23,17 @@ with an instruction rather than a traceback.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any
 
 from ..core.log import Frame, FrameKind, RunRecord, RunStatus, select_frames
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_TTL_SECONDS = 24 * 3600
-DEFAULT_HEARTBEAT_TTL = 30
+DEFAULT_HEARTBEAT_TTL = 300
 
 
 def _require_redis() -> Any:
@@ -195,6 +198,15 @@ class RedisRunEventLog:
             # than evidence of a crash.
             record.status = RunStatus.ERROR
             record.error = record.error or "the process running this run stopped responding"
+            try:
+                await self.set_status(run_id, RunStatus.ERROR, error=record.error)
+                err_event = {
+                    "type": "RUN_ERROR",
+                    "message": record.error,
+                }
+                await self.append(run_id, [err_event])
+            except Exception:
+                logger.warning("failed to persist lapsed run error for %s", run_id, exc_info=True)
         return record
 
     async def list_runs(self, thread_id: str, *, user_id: str | None = None) -> list[RunRecord]:
@@ -242,6 +254,15 @@ class RedisRunEventLog:
             # on a status change would truncate the final frames.
             record = await self.get_run(run_id)
             if record is None or not record.is_producing:
+                # Drain any final frames (such as RUN_ERROR or terminal completion frames)
+                # appended right before or during status transition.
+                final_response = await self.client.xread({key: cursor}, count=100)
+                if final_response:
+                    for _, entries in final_response:
+                        for entry in entries:
+                            frame = _to_frame(entry)
+                            cursor = frame.offset
+                            yield frame
                 return
 
 

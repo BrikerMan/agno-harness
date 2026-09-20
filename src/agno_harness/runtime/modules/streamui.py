@@ -543,10 +543,12 @@ class StreamUIModule(Module):
         self.data(run)["parsers"] = {}
 
         for block_id in list(self._open_blocks(run)):
+            value: dict[str, Any] = {"blockId": block_id, "truncated": True}
+            await self._finish_block(value, block_id, run)
             yield CustomEvent(
                 type=EventType.CUSTOM,
                 name=EVENT_BLOCK_END,
-                value={"blockId": block_id, "truncated": True},
+                value=value,
             )
         self.data(run)["open"] = []
 

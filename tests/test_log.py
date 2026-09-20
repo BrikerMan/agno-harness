@@ -359,6 +359,28 @@ class TestOrphanDetection:
 
         assert (await log.get_run("r1")).status is RunStatus.PAUSED
 
+    async def test_tail_emits_run_error_when_heartbeat_lapses(self, log):
+        await log.start_run("r1", "t1")
+        frames = []
+
+        async def _run_tail():
+            async for frame in log.tail("r1", block_ms=100):
+                frames.append(frame)
+
+        tail_task = asyncio.create_task(_run_tail())
+
+        # Wait for heartbeat (ttl=1) to expire
+        await asyncio.sleep(1.2)
+        await asyncio.wait_for(tail_task, timeout=2.0)
+
+        assert len(frames) >= 1
+        assert frames[-1].event.get("type") == "RUN_ERROR"
+        assert "stopped responding" in frames[-1].event.get("message", "")
+
+        # Verify durable status in redis
+        record = await log.get_run("r1")
+        assert record.status is RunStatus.ERROR
+
 
 class TestCompaction:
     """Snapshots are not written yet, but the read path is already final.

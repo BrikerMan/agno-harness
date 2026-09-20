@@ -376,6 +376,40 @@ class TestActiveRuns:
             for frame in frames
         )
 
+    async def test_starting_new_run_settles_previous_paused_run(self):
+        manager = manager_for(
+            FakeAgent(
+                [
+                    content("May I?"),
+                    run_paused(
+                        [
+                            tool_execution(
+                                "c1",
+                                "send_message",
+                                {"recipient": "x"},
+                                requires_user_input=True,
+                            )
+                        ]
+                    ),
+                ]
+            )
+        )
+        await manager.start(make_input("first", run_id="run-1", thread_id="t1"))
+        await settle(manager, "run-1")
+        assert (await manager.log.get_run("run-1")).status is RunStatus.PAUSED
+
+        active_before = await manager.list_active("t1")
+        assert len(active_before) == 1
+        assert active_before[0].run_id == "run-1"
+
+        # Now start run-2 on the same thread
+        await manager.start(make_input("second", run_id="run-2", thread_id="t1"))
+        assert (await manager.log.get_run("run-1")).status is RunStatus.FINISHED
+
+        active_after = await manager.list_active("t1")
+        assert [r.run_id for r in active_after] == ["run-2"]
+        await settle(manager, "run-2")
+
 
 class TestOwnership:
     async def test_another_user_cannot_attach(self):
@@ -481,6 +515,27 @@ class _HistoryOnlyLog:
 class _BrokenLog(InMemoryRunEventLog):
     async def append(self, run_id, frames):
         raise RuntimeError("the disk went away")
+
+
+async def test_background_heartbeat_ticks_while_agent_is_silent():
+    gate = asyncio.Event()
+    agent = _GatedAgent(gate, chunks("hello ", "world"))
+    beats = []
+
+    class _RecordingLog(InMemoryRunEventLog):
+        async def heartbeat(self, run_id: str) -> None:
+            beats.append(run_id)
+
+    log = _RecordingLog()
+    manager = manager_for(agent, log=log, heartbeat_interval=0.05)
+    await manager.start(make_input("hello", run_id="r1", thread_id="t1"))
+
+    # Agent is blocked on gate, producing zero events
+    await asyncio.sleep(0.16)
+    assert len(beats) >= 2, f"Expected periodic heartbeats during silence, got {beats}"
+
+    gate.set()
+    await settle(manager, "r1")
 
 
 def _rehydrate(events: list[dict]):
