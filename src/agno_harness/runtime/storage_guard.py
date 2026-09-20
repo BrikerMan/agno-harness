@@ -41,11 +41,21 @@ def _sql_persistent_store(store: Any) -> bool:
     if store is None:
         return False
     name = type(store).__name__
-    if name.startswith("InMemory"):
+    if "InMemory" in name or "HistoryOnly" in name or name in {"FakeLog", "BrokenLog"}:
         return False
-    if getattr(store, "is_durable", False):
+    inner = getattr(store, "_inner", None)
+    if inner is not None and not _sql_persistent_store(inner):
+        return False
+    if (
+        getattr(store, "session_factory", None)
+        or getattr(store, "_session_factory", None)
+        or getattr(store, "engine", None)
+        or getattr(store, "_engine", None)
+    ):
         return True
-    return name.startswith("SQL") or "SQLAlchemy" in name
+    if name.startswith("SQL") or "SQLAlchemy" in name:
+        return True
+    return bool(getattr(store, "is_durable", False))
 
 
 def harness_stores_are_persistent(stores: Stores) -> bool:

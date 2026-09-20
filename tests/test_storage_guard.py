@@ -40,11 +40,14 @@ def test_empty_pair_is_allowed():
 
 
 def test_in_memory_harness_does_not_require_agno_db():
+    from .test_longrun import _HistoryOnlyLog
+
     check_history_pairing(None, Stores(event_log=InMemoryRunEventLog()))
     check_history_pairing(
         None,
         Stores(event_log=InMemoryRunEventLog(), history_archive=InMemoryHistoryArchive()),
     )
+    check_history_pairing(None, Stores(event_log=_HistoryOnlyLog()))
 
 
 def test_sql_harness_without_agno_db_fails():
