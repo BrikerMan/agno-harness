@@ -3,112 +3,171 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
 
-> **Enterprise agent scaffolding. You write the business and the cards. The rest is production-ready.**
+> **Your agent runs locally. You don't know where to start when you need to give it to customers.**
 
 [中文文档](README_zh.md) | [Docs](docs/en/README.md) | [SPEC.md](SPEC.md) | [AGENTS.md](AGENTS.md)
 
----
+It chats fine in the terminal. The moment you want colleagues, customers, or a group to use it, you find the prompt is not what's missing: who is using it, where the chat left off, whether two people mix up, how to look up a mistake, how to put it on the web and in a group.
 
-Writing an Agno agent is fast. Shipping one people can refresh, leave running for half an hour, and drop into a Lark group means rebuilding protocol, compression, resume, cards, and rate limits. agno-harness turns that into assembly: Agno Runtime + Relay. Your product owns the business logic and the cards. Compression, long-runs, and channels are already there — and swappable.
+agno-harness covers that layer. You still write what the agent should do. The same agent runs in the terminal, the browser, Teams, and Lark. Chat history, documents, skills, tools, tracing, login, and conversations are already built in.
 
----
+If someone refreshes, it keeps answering. If they come back tomorrow, it still remembers. Two people in a group do not mix chats. If it says something wrong, you can open that turn. If it needs a person, it waits.
 
 
+|             | What you get                                                                                          | Entry                        |
+| ----------- | ----------------------------------------------------------------------------------------------------- | ---------------------------- |
+| **Runtime** | Remembers the chat, notes, skills, tools, traces, resume, compression, cards, waiting for a person, helpers | `AgentRuntime`               |
+| **Relay**   | Who is talking, which conversation. Same agent in the terminal, the browser, Teams, and Lark         | `RelayApp` + `app/channels/` |
 
-## What actually sets it apart
 
-**Close the tab. The run keeps going.** Closing a tab just stops watching. The agent keeps working. Reopen and it continues mid-sentence — cards, reasoning, child panels included. History is what the user saw, not the lossy model session. A run dies only when you abort it.
-
-**Long sessions shrink. The KV cache stays hot.** Stock Agno compression fires a sync LLM call per tool, stalls the UI 10–20s, and rewrites the prefix — prompt cache is gone. We compress once, only when tokens actually cross the limit, by **appending** a checkpoint at the end of the transcript. That request keeps the previous prefix intact: **100% KV-cache hit**. Later turns keep eating the prefix cache. One pass over intent, facts, and next steps — not a summary per tool. Dangling tool calls get sealed so the next turn is not a 400.
-
-**The business and the cards are yours.** Hang work on a Module / Toolkit. A card is one class: schema, `resolve()` for facts, `render_`* per channel. The model emits IDs; the server fills posters, ratings, deep links. Todos replace in place. Long docs and decks stream in sections — thousands of HTML lines never hit the SSE.
-
-**One agent, in the browser and in the group.** The web app can stream word by word. In Lark or Teams it does not type into the channel — it marks “working”, then sends one finished card when it is done. Ten search hits become one notification, so the group is not flooded. A DM keeps context; in a group each person has their own thread of memory. If the platform retries the same webhook, the same turn does not run three times. Local Lark needs no public URL.
-
-**It stops when a human must decide, and you can see the helpers.** Need a confirmation, an extra sentence, or an approval? The agent waits, then continues after the click. A helper sent off to research works in its own area — thinking and cards included. The main agent only takes the conclusion, so memories do not get mixed.
+One process. One Runtime. Only the main agent sits on the Runtime. Helpers are specialists it can call. Their work shows in a side panel. The notes it searches live in `data/knowledge/`.
 
 ---
 
+## If you have already shipped an agent
 
+The details that usually get rewritten per product:
 
-## How you assemble it
+**Close the tab. The run keeps going.** Closing a tab just stops watching. The agent keeps working. Reopen and it continues mid-sentence — cards, reasoning, child panels included. History is what the user saw. A run dies only when you abort it. [Long-run / attach](docs/en/03-clients/01-web-react/04-attach-and-longrun.md)
 
+**Long sessions shrink. The KV cache stays hot.** Compression runs once, only when tokens actually cross the limit, by **appending** a checkpoint at the end of the transcript. That request keeps the previous prefix intact. Later turns keep using that prefix. Dangling tool calls get sealed so the next turn stays valid. [Compression](docs/en/02-interactions/04-compression-and-sealing/README.md)
 
-|             | What you get                                        | Entry                                       |
-| ----------- | --------------------------------------------------- | ------------------------------------------- |
-| **Runtime** | Resume, compression, cards, wait-for-human, helpers | `AgentRuntime` + `make_agui_router`          |
-| **Relay**   | The same agent on Lark / Teams / CLI                | `RelayApp` + `LarkChannel` / `TeamsChannel` |
+**The cards are yours.** One class: schema, `resolve()` for facts, `render_`* per channel. The model emits IDs; the server fills posters, ratings, deep links. [Cards](docs/en/02-interactions/01-class-first-cards.md)
 
+**One agent, in the browser and in the group.** The web app can stream word by word. In Lark or Teams it marks “working”, then sends one finished card. If the platform retries the same webhook, the same turn does not run again. Local Lark needs no public URL.
 
-Web or desktop: Runtime. Group chat as well: add Relay. Agent code stays one.
+**It stops when a human must decide.** Confirmation, an extra sentence, an approval — the agent waits, then continues after the click. [HITL](docs/en/02-interactions/02-hitl-and-actions/README.md)
+
+---
+
+## Create an agent
+
+Same steps for a person and for a coding agent. Python 3.11 or newer.
 
 ```bash
-pip install "agno-harness[fastapi,sqlite]"   # Runtime
-pip install "agno-harness[teams,lark]"       # add Relay
-pip install "agno-harness[all]"
+python3 --version
+pip install "agno-harness[fastapi,teams,lark]"
 ```
 
-```python
-from agno.agent import Agent
-from agno.db.sqlite import SqliteDb
-from agno.models.openai.like import OpenAILike
-from fastapi import FastAPI
+With [uv](https://docs.astral.sh/uv/): `uv add "agno-harness[fastapi,teams,lark]"`.
 
-from agno_harness import AgentRuntime, SmartCompressionManager, make_agui_router
-from agno_harness.runtime.longrun import LongRunManager
-
-db = SqliteDb(db_file="sessions.db")
-model = OpenAILike(id="...", api_key=..., base_url=...)
-agent = Agent(
-    model=model,
-    db=db,
-    compression_manager=SmartCompressionManager(model=model),
-    add_history_to_context=True,
-    num_history_runs=100,
-    telemetry=False,
-)
-runtime = AgentRuntime(agent=agent, db=db)
-app = FastAPI()
-app.include_router(make_agui_router(runtime, long_runs=LongRunManager(runtime)))
-```
-
-`POST /agui?long-run=1` streams SSE. Reconnect on `GET /runs/{id}/attach`. History is `/frames`.
-
-```python
-from agno_harness import RelayApp, CLIChannel, LarkChannel
-
-app = RelayApp(agent)
-app.add_channel(CLIChannel())
-app.add_channel(LarkChannel(app_id="...", app_secret="...", use_websocket=True))
-app.serve()
-```
-
-Mount into an existing FastAPI app with `relay.get_router(resolve_user_id=...)`.
+Start in the terminal. No bot account and no public URL.
 
 ```bash
-make run    # examples/01_cli_demo.py
+mkdir my-agent && cd my-agent
+agno-harness init . --channel cli
+cp .env.example .env
 ```
 
+Fill these three lines in `.env`. Any OpenAI-compatible gateway works (OpenAI, OpenRouter, DashScope, or a local server).
+
+```env
+AGNO_HARNESS_LLM_BASE_URL=https://your-gateway.example/v1
+AGNO_HARNESS_LLM_API_KEY=sk-your-key
+AGNO_HARNESS_LLM_MODEL=gpt-4o
+```
+
+```bash
+python agent.py
+```
+
+Type a message. `/reset` starts a fresh chat. `/exit` quits. The key stays in `.env`. `.gitignore` already ignores that file.
+
+`--channel` chooses the process entry. Every project gets the same tree: a coordinator, one placeholder helper (`AgentBuilder`), Markdown notes, one skill, tools, cards, and a `channels/` package. `AgentBuilder` and the user resolver are marked `MUST CHANGE BEFORE PRODUCTION`.
+
+```text
+agent.py                         process entry
+app/main.py                      FastAPI app (create_app)
+app/cli.py                       terminal loop
+app/identity.py                  build_user_resolver; Teams uses build_teams_resolver
+app/paths.py                     data/agent.db, data/sessions.db, data/knowledge/
+app/knowledge/                   seed notes, copied into data/knowledge/ when missing
+data/                            gitignored databases and the notes the agent searches
+app/agents/main/                 coordinator
+  instructions.md                voice and when to delegate
+  tools/                         one Toolkit per file, listed in TOOLS
+  cards/                         one card class per file, registered on CARD_CATALOG
+  actions/                       button handlers
+  skills/<name>/SKILL.md         loaded on demand
+app/agents/agent_builder.py      placeholder helper. Replace before production.
+app/channels/                    one module per transport
+  __init__.py                    mount_all calls mount_teams(relay, app) before mount_web
+app/services/                    shared functions
+```
+
+
+| Change this                     | Edit                                                                                                                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| How it talks, when it delegates | `app/agents/main/instructions.md`                                                                                                         |
+| A fact it should look up        | `data/knowledge/*.md`. Seeds live in `app/knowledge/` and copy across only when the file is missing.                                      |
+| Who is calling                  | `app/identity.py`. Teams mounts pass `build_teams_resolver()`.                                                                            |
+| A new tool                      | `app/agents/<name>/tools/<tool>.py`, then append it to `TOOLS`                                                                            |
+| A new card                      | a `BlockSchema` in `cards/`, register it on `CARD_CATALOG`                                                                                |
+| A new skill                     | `skills/<name>/SKILL.md`. `cards:` names must already be on that agent's catalog                                                          |
+| A new helper                    | `app/agents/<name>.py` with `NAME` and `build()`, then pass the agent into `assemble()` in `app/agents/main/agent.py`                     |
+| A new channel                   | `app/channels/<name>.py` with `mount(relay, app)`, import it, and call it inside `mount_all` before `mount_web`                           |
+
+
+Each module docstring in the generated project repeats the rule for that folder. Follow the file that is already there.
+
+Helpers are not mounted on a channel. The coordinator is the only agent on `AgentRuntime`.
+
+### Channels
+
+
+| `--channel`     | What `python agent.py` does                                                                                                                                                |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cli`           | Calls `cli.mount` and reads the terminal. FastAPI stays in `app/main.py` and is not started.                                                                               |
+| `web`           | Serves port 8000. Chat API is `POST /agui`. Pair it with [Web / React](docs/en/03-clients/01-web-react/README.md) or the [frontend kit](resources/frontend-kit/README.md). |
+| `teams`         | `mount_all` calls `mount_web` and `mount_teams`. Azure messaging URL is your public host plus `/api/messages`.                                                             |
+| `lark`          | `mount_all` calls `mount_lark`. The bot connects out over a WebSocket.                                                                                                     |
+| `all` (default) | `mount_all` calls web, teams, lark, and cli.                                                                                                                               |
+
+
+An enabled channel with missing settings logs an error and the process stops. Fill the keys before you start that channel.
+
+Teams:
+
+```bash
+agno-harness init . --channel teams
+cp .env.example .env
+agno-harness teams onboard
+agno-harness teams doctor
+python agent.py
+```
+
+Walkthrough: [03 Teams](docs/en/00-agent-cookbook/03-teams-bot-agent.md).
+
+Lark:
+
+```bash
+agno-harness init . --channel lark
+cp .env.example .env
+agno-harness lark onboard
+python agent.py
+```
+
+Walkthrough: [04 Lark](docs/en/00-agent-cookbook/04-lark-feishu-agent.md).
+
+`POST /agui?long-run=1` streams SSE. Reconnect on `GET /runs/{id}/attach`. History is `/frames`. An existing FastAPI app can mount `relay.get_router(resolve_user_id=...)`.
+
 ---
-
-
 
 ## Where to read next
 
 Index: [docs/en/README.md](docs/en/README.md) · [docs/zh/README.md](docs/zh/README.md)
 
 
-| You are…                    | Start here                                                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| You are…                    | Start here                                                                                                                                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notes, skills, helpers      | [07 Markdown notes](docs/en/00-agent-cookbook/07-teams-knowledge-bot.md) · [delegation](docs/en/02-interactions/06-multi-agent-delegation.md) · [skills](docs/en/02-interactions/07-skills-and-jit.md)                                        |
 | Compression / todos / cards | [Cookbook](docs/en/00-agent-cookbook/README.md) → [compression](docs/en/02-interactions/04-compression-and-sealing/README.md) · [todos](docs/en/02-interactions/03-todo/README.md) · [cards](docs/en/02-interactions/01-class-first-cards.md) |
-| Web refresh-and-resume      | [Web React](docs/en/03-clients/01-web-react/README.md) · [frontend-kit](resources/frontend-kit/README.md) · [attach](docs/en/03-clients/01-web-react/04-attach-and-longrun.md) |
-| Lark / Teams                | [Lark](docs/en/00-agent-cookbook/04-lark-feishu-agent.md) · [Teams](docs/en/00-agent-cookbook/03-teams-bot-agent.md)        |
-| HITL / multi-agent          | [HITL](docs/en/02-interactions/02-hitl-and-actions/README.md) · [delegation](docs/en/02-interactions/06-multi-agent-delegation.md) |
+| Web refresh-and-resume      | [Web React](docs/en/03-clients/01-web-react/README.md) · [frontend-kit](resources/frontend-kit/README.md) · [attach](docs/en/03-clients/01-web-react/04-attach-and-longrun.md)                                                                |
+| Lark / Teams                | [Lark](docs/en/00-agent-cookbook/04-lark-feishu-agent.md) · [Teams](docs/en/00-agent-cookbook/03-teams-bot-agent.md)                                                                                                                          |
+| HITL                        | [HITL](docs/en/02-interactions/02-hitl-and-actions/README.md)                                                                                                                                                                                 |
 
 
 ---
-
-
 
 ## License
 

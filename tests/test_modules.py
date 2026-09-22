@@ -257,7 +257,9 @@ class TestBracketsAlwaysClose:
         runtime = AgentRuntime(
             agent=FakeAgent(
                 [
-                    content('```stream-ui {"schema": "artifact", "filepath": "partial.txt"}\npartial content\n'),
+                    content(
+                        '```stream-ui {"schema": "artifact", "filepath": "partial.txt"}\npartial content\n'
+                    ),
                     run_completed(),
                 ]
             ),

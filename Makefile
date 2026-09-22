@@ -14,19 +14,19 @@ sync:
 	uv sync --all-extras
 
 lint:
-	uv run ruff check src tests
+	uv run ruff check src tests resources/templates
 	uv run mypy src
 
 format:
-	uv run ruff check --fix src tests
-	uv run ruff format src tests
+	uv run ruff check --fix src tests resources/templates
+	uv run ruff format src tests resources/templates
 
 test:
 	uv run pytest tests
 
 ci:
-	uv run ruff format --check src tests
-	uv run ruff check src tests
+	uv run ruff format --check src tests resources/templates
+	uv run ruff check src tests resources/templates
 	uv run mypy src
 	uv run pytest tests
 

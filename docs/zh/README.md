@@ -2,7 +2,7 @@
 
 [English](../en/README.md) | 简体中文（正文）
 
-`agno-harness` 是企业级 Agent 脚手架：**Agno Runtime + Relay**。你写业务和卡片；刷新续写、智能压缩、多渠道投递已经在底座里。
+`agno-harness` 是企业级 Agent 脚手架：**Agno Runtime + Relay**。本地 Agent 能跑；一要发给客户，缺的那一层在这里。
 
 文档分三层：先照着菜谱跑通，再查 SDK，最后才看线级协议。
 
@@ -18,6 +18,7 @@
 4. [04 飞书 / Lark](00-agent-cookbook/04-lark-feishu-agent.md)
 5. [05 多 Agent 委托](00-agent-cookbook/05-multi-agent-team.md)
 6. [06 附件、插话、日志、审计](00-agent-cookbook/06-advanced-fancy-modules.md)
+7. [07 Markdown 笔记](00-agent-cookbook/07-teams-knowledge-bot.md)
 
 菜谱目录：[00-agent-cookbook/README.md](00-agent-cookbook/README.md)
 

@@ -8,3 +8,4 @@ Runtime first, then Relay. Run them in this order.
 4. **[04 Lark](04-lark-feishu-agent.md)** — scan to create the app; WebSocket, no public IP.
 5. **[05 Helpers](05-multi-agent-team.md)** — `SubAgentToolkit`: the helper gets its own panel; the main agent only sees the conclusion.
 6. **[06 Extensions](06-advanced-fancy-modules.md)** — attachments, chime-in policy, logging, audit store.
+7. **[07 Markdown notes](07-teams-knowledge-bot.md)** — each agent has `knowledge/*.md`. Edits show up on the next search.

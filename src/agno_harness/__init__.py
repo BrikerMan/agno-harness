@@ -3,7 +3,21 @@
 from typing import Any
 
 from .app import RelayApp
-from .channels import BaseChannel, CLIChannel, LarkChannel, TeamsChannel, WebChannel
+from .channels import (
+    TEAMS_MESSAGES_PATH,
+    BaseChannel,
+    CLIChannel,
+    LarkChannel,
+    TeamsAuthError,
+    TeamsBotAdapter,
+    TeamsChannel,
+    TeamsChannelError,
+    TeamsCredentialsError,
+    TeamsDeliveryError,
+    TeamsServiceUrlError,
+    WebChannel,
+    teams_messaging_endpoint,
+)
 from .channels.cleaning import html_to_markdown, lark_post_to_markdown, teams_html_to_markdown
 from .config import RelayConfig
 from .core import (
@@ -56,6 +70,7 @@ from .helpers import (
     poll_lark_app_registration,
     save_env_file,
 )
+from .knowledge import MarkdownKnowledge
 from .logging import (
     RelayConsoleFormatter,
     RelayJsonFormatter,
@@ -247,6 +262,7 @@ __all__ = [
     "KeywordChimeInPolicy",
     "LarkChannel",
     "LongRunManager",
+    "MarkdownKnowledge",
     "MediaUrl",
     "MentionOnlyPolicy",
     "MessageAuditMixin",
@@ -319,7 +335,14 @@ __all__ = [
     "SubAgentTool",
     "SubAgentToolkit",
     "SubStream",
+    "TEAMS_MESSAGES_PATH",
+    "TeamsAuthError",
+    "TeamsBotAdapter",
     "TeamsChannel",
+    "TeamsChannelError",
+    "TeamsCredentialsError",
+    "TeamsDeliveryError",
+    "TeamsServiceUrlError",
     "ThreadService",
     "ThrottledStreamBuffer",
     "TodoToolkit",
@@ -360,6 +383,7 @@ __all__ = [
     "subagent_steps_parser",
     "substream",
     "teams_html_to_markdown",
+    "teams_messaging_endpoint",
     "todo_write",
     "ui_block",
 ]

@@ -82,8 +82,8 @@ def test_interactive_onboarding_saves_keys(tmp_path):
     assert "AGNO_HARNESS_LARK_APP_ID=" in env_file.read_text()
 
     teams_keys = interactive_teams_onboarding(save_to_env=True, env_file=str(env_file))
-    assert "AGNO_HARNESS_TEAMS_APP_ID" in teams_keys
-    assert "AGNO_HARNESS_TEAMS_APP_ID=" in env_file.read_text()
+    assert teams_keys == {}
+    assert "AGNO_HARNESS_TEAMS_APP_ID=" not in env_file.read_text()
 
 
 def test_relay_logging_console_and_json():

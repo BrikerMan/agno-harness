@@ -467,9 +467,14 @@ class RelayApp:
                     await channel.settle(key, ack_token, emoji="❓")
             return OutboundMessage(text="")
 
-        # 2. Check Chime-In Policy for group/channel messages (least privilege guardrail)
-        if self.chime_in_policy is not None:
-            should_chime_in = await self.chime_in_policy.should_chime_in(event)
+        # 2. Check Chime-In Policy for group/channel messages (least privilege guardrail).
+        # An app-level policy wins. Otherwise a channel may supply its own
+        # (Teams defaults to mention-only; CLI has none and stays always-on).
+        policy = self.chime_in_policy
+        if policy is None:
+            policy = getattr(channel, "chime_in_policy", None)
+        if policy is not None:
+            should_chime_in = await policy.should_chime_in(event)
             if not should_chime_in:
                 log.debug(
                     f"Chime-in policy suppressed execution for event {event.event_id} in {key.chat_id}"

@@ -77,7 +77,7 @@ app.include_router(
 - `POST /agent/agui`：标准 AG-UI SSE 协议通信管道；
 - `GET /agent/threads`：基于当前登录用户隔离的会话列表；
 - `GET /agent/threads/{id}/messages`：历史消息重放；
-- 如果 `relay.add_channel(teams_channel)`，Teams Webhook 也会自动就绪。
+- 如果 `relay.add_channel(teams_channel)`，Teams Webhook 是 `POST /agent/api/messages`。渠道路由固定是 `/api/messages`，router 的 `prefix` 加在前面。没有 `/agent/teams/messages` 这条路由。
 
 ---
 

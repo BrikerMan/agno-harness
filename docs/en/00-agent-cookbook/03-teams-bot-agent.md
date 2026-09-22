@@ -10,18 +10,24 @@ A minimal Teams bot: **Agent + DuckDuckGo only**. No extra cards or callbacks. W
 uv run agno-harness teams onboard
 ```
 
-The wizard walks you through:
+Teams has no QR code. The wizard runs the Teams Developer CLI (`teams app create`) and prints an install URL. Open that link in a browser.
 
-1. **Azure Portal** — create an Azure Bot.
-2. **Least privilege** — `ChannelMessage.Read.Group`, `ChatMessage.Read`.
-3. **Credentials** — App ID and Client Secret land in `.env`:
+Install the CLI once: `npm install -g @microsoft/teams.cli`, then `teams login --device-code`. Plain `teams login` opens a browser and fails with AADSTS70007. If `teams status` says you are logged in but `TDP: not connected`, run `teams logout`, then `teams login --device-code`.
+
+1. **Create** — `teams app create` registers a Teams-managed bot. No Azure subscription.
+2. **Install URL** — the terminal prints `https://teams.microsoft.com/l/app/...`. Open it and add the bot.
+3. **Credentials** — the terminal prints env lines and does not write a file. Copy them into `.env`:
 
    ```env
    AGNO_HARNESS_TEAMS_APP_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
    AGNO_HARNESS_TEAMS_APP_PASSWORD=your_azure_client_secret
+   # Single-tenant bots: set the tenant. Multi-tenant bots: leave empty.
+   AGNO_HARNESS_TEAMS_TENANT_ID=
    ```
 
-It also writes a `manifest.json` app package template.
+   Then `agno-harness teams doctor` prints the install link and checks whether the bot's messaging callback is set.
+
+Scaffold the agent separately with `agno-harness init . --channel teams`. `teams onboard` does not ask for a project directory.
 
 ---
 
@@ -38,11 +44,11 @@ sequenceDiagram
     participant LLM as Agno Agent (LLM + Search)
 
     User->>Azure: @bot search Python 3.13 features
-    Azure->>Channel: POST /agent/teams/messages
+    Azure->>Channel: POST /api/messages
 
     rect rgb(240, 248, 255)
     Note over Azure,Channel: Fast ACK — stop the retry storm
-    Channel->>Channel: Verify Bot Framework signature
+    Channel->>Channel: Verify Bot Framework JWT
     Channel-->>Azure: HTTP 200 OK immediately
     Channel->>Azure: React 🤔 or send typing
     Azure-->>User: Bot is thinking
@@ -70,7 +76,7 @@ sequenceDiagram
 
 What the base already handles:
 
-1. **Signature check** — Bot Framework JWT.
+1. **JWT check** — Bot Framework bearer token, audience = App ID. Missing token is HTTP 401.
 2. **HTML cleanup** — `<p>`, `<div>`, `<br>` become Markdown.
 3. **Mention strip** — `<at>BotName</at>` never reaches the model as a prompt token.
 4. **Rate-limit safety** — default `stream_mode="final"`, never edit per token.
@@ -120,17 +126,15 @@ runtime = AgentRuntime(agent=agent)
 # enable_deduplication=True: drop Teams retries while search is still running
 relay = RelayApp(runtime=runtime, enable_deduplication=True)
 
-# Zero-arg init reads AGNO_HARNESS_TEAMS_APP_ID / AGNO_HARNESS_TEAMS_APP_PASSWORD
+# Zero-arg init reads AGNO_HARNESS_TEAMS_APP_ID / AGNO_HARNESS_TEAMS_APP_PASSWORD.
+# Group chats are mention-only. Pass chime_in_policy= to change that.
 relay.add_channel(TeamsChannel())
 
 app = FastAPI(title="Teams Agent Service", lifespan=relay.lifespan)
 
-app.include_router(
-    relay.get_router(
-        prefix="/agent",
-        allow_anonymous=True,  # Bot Framework signature is the auth
-    )
-)
+# No router prefix: Azure Messaging endpoint is POST /api/messages.
+# allow_anonymous applies to AG-UI routes. The Teams webhook checks the Bot Framework JWT itself.
+app.include_router(relay.get_router(allow_anonymous=True))
 
 if __name__ == "__main__":
     uvicorn.run("teams_agent_server:app", host="0.0.0.0", port=8000)
@@ -152,7 +156,7 @@ ngrok http 8000
 Azure Portal → your Azure Bot → **Configuration** → Messaging endpoint:
 
 ```
-https://abc1234.ngrok-free.app/agent/teams/messages
+https://abc1234.ngrok-free.app/api/messages
 ```
 
 ### C. Talk to the bot

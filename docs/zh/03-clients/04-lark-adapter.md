@@ -7,7 +7,7 @@
 ## 1. 快速接入
 
 ```python
-from agno_harness import RelayApp
+from agno_harness import AgentRuntime, RelayApp
 from agno_harness.channels.lark import LarkChannel
 
 lark = LarkChannel(
@@ -17,7 +17,7 @@ lark = LarkChannel(
     encrypt_key="your-encrypt-key", # 可选
 )
 
-relay = RelayApp(agent).add_channel(lark)
+relay = RelayApp(AgentRuntime(agent=agent)).add_channel(lark)
 ```
 
 ---

@@ -13,16 +13,23 @@ Microsoft Teams 是跨国企业中使用最广泛的企业协作套件。
 uv run agno-harness teams onboard
 ```
 
-向导将在终端中交互式引导你：
-1. **Azure Portal 直达链接与步骤**：创建 Azure 机器人服务；
-2. **安全最小权限建议（Least Privilege）**：`ChannelMessage.Read.Group`, `ChatMessage.Read`；
-3. **输入凭据自动保存**：输入在 Azure 获取的 `App ID` 与 `Client Secret`，向导自动写入本地 `.env` 文件：
+Teams 没有二维码。向导调用 Teams Developer CLI（`teams app create`），在终端直接打印安装链接。用浏览器打开即可。
+
+先装一次 CLI：`npm install -g @microsoft/teams.cli`，然后 `teams login --device-code`。浏览器里的 `teams login` 会报 AADSTS70007。如果 `teams status` 显示已登录但 `TDP: not connected`，先 `teams logout`，再 `teams login --device-code`。
+
+1. **创建**：`teams app create` 注册 Teams 托管的 Bot，不需要 Azure 订阅。
+2. **安装链接**：终端输出 `https://teams.microsoft.com/l/app/...`，打开后把 Bot 加进 Teams。
+3. **凭据**：终端直接打印 env，不会写入文件。复制到 `.env`：
    ```env
    AGNO_HARNESS_TEAMS_APP_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
    AGNO_HARNESS_TEAMS_APP_PASSWORD=your_azure_client_secret
+   # 单租户必须填写；多租户留空，token 走 botframework.com
+   AGNO_HARNESS_TEAMS_TENANT_ID=
    ```
 
-同时，该命令会在当前目录生成一份标准的 Teams 应用清单模版 `manifest.json`。
+   填完后运行 `agno-harness teams doctor`：打印安装链接，并检查 Bot 上的 messaging callback 有没有配置。
+
+项目用 `agno-harness init . --channel teams` 单独生成。`teams onboard` 不会询问项目目录。
 
 ---
 
@@ -41,7 +48,7 @@ sequenceDiagram
     participant LLM as Agno Agent (LLM + Search)
 
     User->>Azure: @机器人 搜索最新的 Python 3.13 新特性
-    Azure->>Channel: POST /agent/teams/messages (Webhook 报文)
+    Azure->>Channel: POST /api/messages (Webhook 报文)
     
     rect rgb(240, 248, 255)
     Note over Azure,Channel: 阶段一：即时响应 (Fast ACK) 防重试雪崩
@@ -128,18 +135,15 @@ relay = RelayApp(runtime=runtime, enable_deduplication=True)
 
 # 5. 添加 Teams 渠道
 # 零参数初始化：自动从 .env 读取 AGNO_HARNESS_TEAMS_APP_ID 和 AGNO_HARNESS_TEAMS_APP_PASSWORD
+# 群聊默认 mention-only。要改策略就传 chime_in_policy=
 relay.add_channel(TeamsChannel())
 
 # 6. 挂载到企业 FastAPI 服务中
 app = FastAPI(title="Teams Agent Service", lifespan=relay.lifespan)
 
-# 挂载 Teams 接收消息的 Webhook 端点
-app.include_router(
-    relay.get_router(
-        prefix="/agent",
-        allow_anonymous=True,  # Teams Webhook 请求自带 Bot Framework 签名验证
-    )
-)
+# 不加 prefix 时，Azure Messaging endpoint 是 POST /api/messages。
+# allow_anonymous 只作用于 AG-UI 路由；Teams webhook 自己校验 Bot Framework JWT。
+app.include_router(relay.get_router(allow_anonymous=True))
 
 if __name__ == "__main__":
     # 本地启动 HTTP 服务
@@ -162,7 +166,7 @@ ngrok http 8000
 ### 步骤 B：在 Azure 配置 Messaging Endpoint
 登录 [Azure Portal](https://portal.azure.com) -> 进入你的 Azure Bot 资源 -> **Configuration** -> 将 **Messaging endpoint** 填入：
 ```
-https://abc1234.ngrok-free.app/agent/teams/messages
+https://abc1234.ngrok-free.app/api/messages
 ```
 
 ### 步骤 C：在 Teams 中发消息实测

@@ -80,7 +80,7 @@ app.include_router(
 - `POST /agent/agui`: standard AG-UI SSE pipe;
 - `GET /agent/threads`: thread list isolated to the authenticated user;
 - `GET /agent/threads/{id}/messages`: history replay;
-- If you `relay.add_channel(teams_channel)`, the Teams webhook is ready as well.
+- If you `relay.add_channel(teams_channel)`, the Teams webhook is `POST /agent/api/messages`. The channel route is always `/api/messages`; the router `prefix` is prepended. There is no `/agent/teams/messages` route.
 
 ---
 

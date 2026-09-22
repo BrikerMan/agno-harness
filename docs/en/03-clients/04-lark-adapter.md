@@ -7,7 +7,7 @@ Lark (Feishu) is widely used in China and in overseas teams. It offers Interacti
 ## 1. Quick start
 
 ```python
-from agno_harness import RelayApp
+from agno_harness import AgentRuntime, RelayApp
 from agno_harness.channels.lark import LarkChannel
 
 lark = LarkChannel(
@@ -17,7 +17,7 @@ lark = LarkChannel(
     encrypt_key="your-encrypt-key", # optional
 )
 
-relay = RelayApp(agent).add_channel(lark)
+relay = RelayApp(AgentRuntime(agent=agent)).add_channel(lark)
 ```
 
 ---

@@ -37,10 +37,7 @@ fastapi = [
     "uvicorn[standard]>=0.34",
 ]
 teams = [
-    "microsoft-agents-activity>=1.0.0",
-    "microsoft-agents-hosting-core>=1.0.0",
-    "microsoft-agents-hosting-aiohttp>=1.0.0",
-    "microsoft-agents-authentication-msal>=1.0.0",
+    "pycryptodome>=3.20",
 ]
 lark = [
     "lark-oapi>=1.2.0",
@@ -81,6 +78,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agno_harness", "src/better_agno_toolbox"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"resources/templates/project" = "agno_harness/project_template"
+"resources/templates/variants" = "agno_harness/project_template_variants"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -97,6 +98,7 @@ dev = [
     "openinference-instrumentation-agno>=0.1.29",
     "openai>=1.50",
     "redis>=5.0",
+    "pycryptodome>=3.20",
 ]
 
 [tool.pytest.ini_options]
@@ -114,7 +116,7 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["src", "tests", "resources/templates"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM"]

@@ -2,7 +2,7 @@
 
 English | [简体中文](../zh/README.md)
 
-`agno-harness` is enterprise agent scaffolding: **Agno Runtime + Relay**. You write the business and the cards. Resume, smart compression, and multi-channel delivery live in the base.
+`agno-harness` is enterprise agent scaffolding: **Agno Runtime + Relay**. Your agent runs locally. This is the layer for giving it to customers.
 
 Docs are three layers: cookbooks first, then the SDK, then the wire protocol.
 
@@ -18,6 +18,7 @@ Local terminal, then Web, Teams, and Lark.
 4. [04 Lark / Feishu](00-agent-cookbook/04-lark-feishu-agent.md)
 5. [05 Multi-agent delegation](00-agent-cookbook/05-multi-agent-team.md)
 6. [06 Attachments, chime-in, logs, audit](00-agent-cookbook/06-advanced-fancy-modules.md)
+7. [07 Markdown notes](00-agent-cookbook/07-teams-knowledge-bot.md)
 
 Cookbook index: [00-agent-cookbook/README.md](00-agent-cookbook/README.md)
 

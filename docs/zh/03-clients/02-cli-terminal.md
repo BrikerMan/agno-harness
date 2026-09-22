@@ -10,7 +10,7 @@
 import asyncio
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
-from agno_harness import RelayApp, CLIChannel, RelayConfig
+from agno_harness import AgentRuntime, RelayApp, CLIChannel, RelayConfig
 
 async def main():
     agent = Agent(
@@ -24,7 +24,7 @@ async def main():
     )
     
     cli = CLIChannel()
-    relay = RelayApp(agent).add_channel(cli)
+    relay = RelayApp(AgentRuntime(agent=agent)).add_channel(cli)
     
     await relay.start()
 

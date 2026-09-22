@@ -108,14 +108,12 @@ class AgentRunner:
             with bind_channel(bound), bind_scope(scope):
                 try:
                     if self.read_timeout is not None:
-                        item = await asyncio.wait_for(
-                            merged.__anext__(), timeout=self.read_timeout
-                        )
+                        item = await asyncio.wait_for(merged.__anext__(), timeout=self.read_timeout)
                     else:
                         item = await merged.__anext__()
                 except StopAsyncIteration:
                     break
-                except asyncio.TimeoutError as exc:
+                except TimeoutError as exc:
                     raise TimeoutError(
                         f"Upstream model stream timed out after {self.read_timeout}s of inactivity"
                     ) from exc
