@@ -99,6 +99,7 @@ def make_agui_router(
     expose_debug_routes: bool = False,
     long_runs: LongRunManager | None = None,
     include_health: bool = False,
+    versioned: bool = True,
 ) -> APIRouter:
     """Build the router for one runtime.
 
@@ -140,9 +141,15 @@ def make_agui_router(
     encoder = EventEncoder()
     resume = _resume_mode(runtime, long_runs)
 
+    web_agui_path = WEB_AGUI_PATH if versioned else "/agui"
+    health_path = HEALTH_PATH if versioned else "/health"
+    threads_path = THREADS_PATH if versioned else "/threads"
+    runs_path = RUNS_PATH if versioned else "/runs"
+    debug_path = DEBUG_PATH if versioned else "/debug"
+
     if include_health:
 
-        @router.get(HEALTH_PATH, name="agui_health", tags=["system"])
+        @router.get(health_path, name="agui_health", tags=["system"])
         async def agui_health() -> dict[str, Any]:
             return {"status": "healthy", "resumeMode": resume.value}
 
@@ -168,7 +175,7 @@ def make_agui_router(
             "running in single-user mode, where every caller can read, replay and delete every thread."
         )
 
-    @router.post(WEB_AGUI_PATH, name="run_agent")
+    @router.post(web_agui_path, name="run_agent")
     async def run_agent(
         request: Request,
         run_input: RunAgentInput,
@@ -203,25 +210,25 @@ def make_agui_router(
             headers=headers,
         )
 
-    @router.get(THREADS_PATH, name="list_threads")
+    @router.get(threads_path, name="list_threads")
     async def list_threads(request: Request) -> list[dict[str, Any]]:
         return await runtime.list_threads(user_id=_user(request))
 
-    @router.get(f"{THREADS_PATH}/{{thread_id}}", name="get_thread")
+    @router.get(f"{threads_path}/{{thread_id}}", name="get_thread")
     async def get_thread(request: Request, thread_id: str) -> Any:
         thread = await runtime.get_thread(thread_id, user_id=_user(request))
         if thread is None:
             return JSONResponse(status_code=404, content={"error": "thread not found"})
         return thread
 
-    @router.get(f"{THREADS_PATH}/{{thread_id}}/messages", name="thread_messages")
+    @router.get(f"{threads_path}/{{thread_id}}/messages", name="thread_messages")
     async def thread_messages(request: Request, thread_id: str) -> Any:
         messages = await runtime.replay_messages(thread_id, user_id=_user(request))
         if messages is None:
             return JSONResponse(status_code=404, content={"error": "thread not found"})
         return messages
 
-    @router.get(f"{THREADS_PATH}/{{thread_id}}/frames", name="thread_frames")
+    @router.get(f"{threads_path}/{{thread_id}}/frames", name="thread_frames")
     async def thread_frames(
         request: Request,
         thread_id: str,
@@ -238,7 +245,7 @@ def make_agui_router(
             return JSONResponse(status_code=501, content={"error": str(exc)})
         return {"frames": frames}
 
-    @router.delete(f"{THREADS_PATH}/{{thread_id}}", name="delete_thread")
+    @router.delete(f"{threads_path}/{{thread_id}}", name="delete_thread")
     async def delete_thread(
         request: Request,
         thread_id: str,
@@ -267,7 +274,7 @@ def make_agui_router(
                 },
             )
 
-        @router.get(f"{RUNS_PATH}/{{run_id}}/attach", name="attach_run")
+        @router.get(f"{runs_path}/{{run_id}}/attach", name="attach_run")
         async def attach_run(
             request: Request,
             run_id: str,
@@ -277,7 +284,7 @@ def make_agui_router(
             return _attach_response(request, run_id, after)
 
         @router.get(
-            f"{RUNS_PATH}/{{run_id}}/stream",
+            f"{runs_path}/{{run_id}}/stream",
             name="attach_run_stream_deprecated",
             deprecated=True,
         )
@@ -289,13 +296,13 @@ def make_agui_router(
             """Deprecated alias of ``GET /api/v1/runs/{run_id}/attach``. Prefer ``/attach``."""
             return _attach_response(request, run_id, after)
 
-        @router.get(f"{THREADS_PATH}/{{thread_id}}/active", name="active_runs")
+        @router.get(f"{threads_path}/{{thread_id}}/active", name="active_runs")
         async def active_runs(request: Request, thread_id: str) -> list[dict[str, Any]]:
             user_id = _user(request)
             records = await long_runs.list_active(thread_id, user_id=user_id)
             return [_run_to_dict(record) for record in records]
 
-        @router.post(f"{RUNS_PATH}/{{run_id}}/abort", name="abort_run")
+        @router.post(f"{runs_path}/{{run_id}}/abort", name="abort_run")
         async def abort_run(request: Request, run_id: str) -> Any:
             user_id = _user(request)
             try:
@@ -306,25 +313,25 @@ def make_agui_router(
 
     if expose_debug_routes:
 
-        @router.get(f"{DEBUG_PATH}/chunks", name="debug_chunks")
+        @router.get(f"{debug_path}/chunks", name="debug_chunks")
         async def debug_chunks() -> dict[str, Any]:
             return runtime.chunk_samples()
 
-        @router.get(f"{DEBUG_PATH}/state/{{run_id}}", name="debug_state")
+        @router.get(f"{debug_path}/state/{{run_id}}", name="debug_state")
         async def debug_state(run_id: str) -> Any:
             state = runtime.stream_state(run_id)
             if state is None:
                 return JSONResponse(status_code=404, content={"error": "unknown run"})
             return state
 
-        @router.get(f"{DEBUG_PATH}/violations", name="debug_violations")
+        @router.get(f"{debug_path}/violations", name="debug_violations")
         async def debug_violations() -> dict[str, Any]:
             return {
                 "mode": runtime.sequencer_mode.value,
                 "violations": [violation_to_dict(v) for v in runtime.last_violations()],
             }
 
-        @router.get(f"{DEBUG_PATH}/runs/{{run_id}}", name="debug_run")
+        @router.get(f"{debug_path}/runs/{{run_id}}", name="debug_run")
         async def debug_run(run_id: str) -> Any:
             # The per-run view is the accurate one: the aggregate routes above
             # answer for whichever run happened to finish last, which under
@@ -481,6 +488,7 @@ def make_relay_router(
     expose_debug_routes: bool = False,
     long_runs: LongRunManager | None = None,
     include_health: bool = True,
+    versioned: bool = True,
 ) -> APIRouter:
     """Build a unified FastAPI APIRouter for an existing enterprise FastAPI host.
 
@@ -505,9 +513,11 @@ def make_relay_router(
     is_relay_app = hasattr(relay_or_runtime, "runtime") and hasattr(relay_or_runtime, "channels")
     runtime = relay_or_runtime.runtime if is_relay_app else relay_or_runtime
 
+    health_path = HEALTH_PATH if versioned else "/health"
+
     if include_health:
 
-        @router.get(HEALTH_PATH, tags=["system"])
+        @router.get(health_path, tags=["system"])
         async def health_check() -> dict[str, Any]:
             channels = list(relay_or_runtime.channels.keys()) if is_relay_app else []
             return {
@@ -522,6 +532,7 @@ def make_relay_router(
         allow_anonymous=allow_anonymous,
         expose_debug_routes=expose_debug_routes,
         long_runs=long_runs,
+        versioned=versioned,
     )
     router.include_router(agui_router)
 

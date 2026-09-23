@@ -498,6 +498,11 @@ class TestConfiguration:
         TestClient(app).post("/api/v1/channels/web/agui", json=_payload())
         assert runtime.agent.last_kwargs["user_id"] == "user-from-header"
 
+    def test_unversioned_legacy_routes_are_mounted_when_versioned_false(self):
+        client, _ = make_client(versioned=False)
+        assert client.post("/agui", json=_payload()).status_code == 200
+        assert client.get("/threads").status_code == 200
+
 
 def _payload():
     return make_input().model_dump(by_alias=True, mode="json")
