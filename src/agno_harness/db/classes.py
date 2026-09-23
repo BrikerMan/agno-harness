@@ -132,15 +132,32 @@ class AgnoHarnessDb:
 
         self._tables_ensured = True
 
-    def build_stores(self, event_log: Any = None, event_stream: Any = None) -> Stores:
-        """Build standard Stores wired to this harness db's models and session factory."""
+    def build_stores(
+        self,
+        event_log: Any = None,
+        event_stream: Any = None,
+        *,
+        use_in_memory_event_log: bool = False,
+    ) -> Stores:
+        """Build standard Stores wired to this harness db's models and session factory.
+
+        Persistent state (threads, archives, custom_events) always uses the SQL database.
+        Streaming hot logs (event_log/event_stream) can use Redis (e.g. RedisRunEventLog)
+        or an in-process in-memory stand-in (InMemoryRunEventLog).
+        """
         registry = (
             StoreRegistry()
             .register(CustomEventStore, self.models["custom_events"])
             .register(HistoryArchive, self.models["run_archives"])
             .register(BaseThreadStore, self.models["threads"])
         )
-        if event_log is None:
+        if event_log is None and use_in_memory_event_log:
+            from ..stores.memory_log import InMemoryRunEventLog
+
+            hot_log = InMemoryRunEventLog()
+            event_log = hot_log
+            event_stream = hot_log
+        elif event_log is None:
             registry.register_event_log(self.models["run_frames"], self.models["run_records"])
 
         built = registry.build(self.session_factory)
@@ -220,9 +237,8 @@ class AgnoHarnessDb:
                 auto_create=auto_create,
             )
 
-        return AgnoHarnessSqliteDb(
-            prefix=prefix,
-            auto_create=auto_create,
+        raise ValueError(
+            f"Cannot derive AgnoHarnessDb from non-persistent or unknown Agno database {type(agno_db).__name__}"
         )
 
 

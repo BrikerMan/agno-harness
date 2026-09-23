@@ -52,7 +52,20 @@ def two_user_db() -> FakeDb:
 
 def make_app(db=None, *, long_runs=None, runtime=None):
     """A router whose identity comes from a header, as a middleware would supply."""
-    runtime = runtime or AgentRuntime(agent=FakeAgent([run_completed()]), db=db)
+    if runtime is None:
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]), db=db)
+        if db is not None and hasattr(db, "sessions"):
+            import asyncio
+
+            sessions = db.sessions.values() if isinstance(db.sessions, dict) else db.sessions
+            for sess in sessions:
+                asyncio.run(
+                    runtime.stores.threads.start_turn(
+                        sess.session_id,
+                        user_id=getattr(sess, "user_id", None),
+                        title=sess.session_id,
+                    )
+                )
     app = FastAPI()
     app.include_router(
         make_agui_router(
@@ -125,15 +138,26 @@ class TestIdentityComesFromTheServer:
         db = two_user_db()
         client, _ = make_app(db)
 
-        as_user(client, "alice").get("/api/v1/threads")
-
-        assert db.queried_user_ids == ["alice"]
+        threads = as_user(client, "alice").get("/api/v1/threads").json()
+        assert [t["threadId"] for t in threads] == ["alice-thread"]
 
 
 class TestSingleUserMode:
     def test_no_resolver_means_everything_is_shared(self):
         """A legitimate local-tool configuration, and it must keep working."""
-        runtime = AgentRuntime(agent=FakeAgent([run_completed()]), db=two_user_db())
+        db = two_user_db()
+        runtime = AgentRuntime(agent=FakeAgent([run_completed()]), db=db)
+        import asyncio
+
+        sessions = db.sessions.values() if isinstance(db.sessions, dict) else db.sessions
+        for sess in sessions:
+            asyncio.run(
+                runtime.stores.threads.start_turn(
+                    sess.session_id,
+                    user_id=getattr(sess, "user_id", None),
+                    title=sess.session_id,
+                )
+            )
         app = FastAPI()
         app.include_router(make_agui_router(runtime))
         client = TestClient(app)
@@ -191,7 +215,7 @@ class TestServiceLevel:
         db = two_user_db()
         service = ThreadService(db)
 
-        await service.list_threads(user_id="alice")
+        await service.get_sessions(user_id="alice")
         await service.replay_messages("alice-thread", user_id="alice")
         await service.delete_thread("alice-thread", user_id="alice")
 

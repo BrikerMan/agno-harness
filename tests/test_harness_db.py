@@ -112,11 +112,11 @@ def test_alembic_migrator_declare_models():
         pass
 
     assert len(CustomBase.metadata.tables) == 0
-    models = AlembicMigrator.declare_models(base=CustomBase, prefix="ipv")
+    models = AlembicMigrator.declare_models(base=CustomBase, prefix="admin_agent")
     assert len(models) == 8
-    assert "ipv_threads" in CustomBase.metadata.tables
-    assert "ipv_conversation_sessions" in CustomBase.metadata.tables
-    assert "ipv_run_frames" in CustomBase.metadata.tables
+    assert "admin_agent_threads" in CustomBase.metadata.tables
+    assert "admin_agent_conversation_sessions" in CustomBase.metadata.tables
+    assert "admin_agent_run_frames" in CustomBase.metadata.tables
 
 
 def test_postgres_url_driver_normalization():

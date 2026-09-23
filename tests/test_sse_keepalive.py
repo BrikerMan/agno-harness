@@ -7,10 +7,9 @@ import asyncio
 import pytest
 
 from agno_harness.runtime.replay import thread_summary_from_session
-from agno_harness.runtime.threads import ThreadService
 from agno_harness.transport.router import SSE_PING_FRAME, _with_sse_ping
 
-from .test_replay import FakeDb, FakeInput, FakeRun, FakeSession
+from .test_replay import FakeInput, FakeRun, FakeSession
 
 
 @pytest.mark.asyncio
@@ -42,32 +41,24 @@ async def test_sse_ping_emits_at_start_even_with_busy_stream():
     assert chunks[1:] == ["data: 0\n\n", "data: 1\n\n", "data: 2\n\n"]
 
 
-@pytest.mark.asyncio
-async def test_list_threads_uses_run_count_not_transcript_rebuild():
-    db = FakeDb(
-        [
-            FakeSession(
-                "t1",
-                runs=[
-                    FakeRun("r1", FakeInput("hello"), "a"),
-                    FakeRun("r2", FakeInput("again"), "b"),
-                ],
-                updated_at=2,
-                session_data={"session_name": "Demo"},
-            )
-        ]
+def test_list_threads_uses_run_count_not_transcript_rebuild():
+    session = FakeSession(
+        "t1",
+        runs=[
+            FakeRun("r1", FakeInput("hello"), "a"),
+            FakeRun("r2", FakeInput("again"), "b"),
+        ],
+        updated_at=2,
+        session_data={"session_name": "Demo"},
     )
-    service = ThreadService(db)
-    threads = await service.list_threads()
-    assert threads == [
-        {
-            "threadId": "t1",
-            "title": "Demo",
-            "messageCount": 0,
-            "runCount": 2,
-            "updatedAt": 2,
-        }
-    ]
+    summary = thread_summary_from_session(session)
+    assert summary == {
+        "threadId": "t1",
+        "title": "Demo",
+        "messageCount": 0,
+        "runCount": 2,
+        "updatedAt": 2,
+    }
 
 
 def test_thread_summary_from_raw_dict():

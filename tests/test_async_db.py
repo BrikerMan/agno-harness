@@ -22,17 +22,22 @@ async def test_thread_service_with_async_db():
 
     service = ThreadService(db=mock_db)
 
-    # 1. list_threads should await get_sessions (projection kwargs)
+    # 1. get_sessions should await get_sessions on db (projection kwargs)
+    sessions = await service.get_sessions(user_id="user-1")
+    assert len(sessions) == 1
+    mock_db.get_sessions.assert_awaited_once()
+    kwargs = mock_db.get_sessions.await_args.kwargs
+    assert kwargs["user_id"] == "user-1"
+    assert kwargs.get("deserialize") is False
+
+    # 1b. list_threads reads from thread_store
+    await service.stores.threads.start_turn("thread-123", user_id="user-1", title="Test Thread")
     threads = await service.list_threads(user_id="user-1")
     assert len(threads) == 1
     assert threads[0]["threadId"] == "thread-123"
     assert threads[0]["title"] == "Test Thread"
     assert threads[0]["messageCount"] == 0
     assert threads[0]["runCount"] == 1
-    mock_db.get_sessions.assert_awaited_once()
-    kwargs = mock_db.get_sessions.await_args.kwargs
-    assert kwargs["user_id"] == "user-1"
-    assert kwargs.get("deserialize") is False
 
     # 2. get_session should await get_session
     session = await service.get_session("thread-123", user_id="user-1")

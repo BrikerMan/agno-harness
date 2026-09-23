@@ -1,7 +1,7 @@
 """One prefix for every table an agent owns.
 
-Omit the prefix and names start with ``agno-harness-``. Pass ``ipv-agent`` or
-``admin-agent`` when several agents share one database.
+Omit the prefix and names start with ``agno_harness_``. Pass ``admin_agent``
+when several agents share one database.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-DEFAULT_TABLE_PREFIX = "agno-harness"
+DEFAULT_TABLE_PREFIX = "agno_harness"
 
 _PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 
@@ -54,7 +54,7 @@ def resolve_prefix(prefix: str | None = None) -> str:
 
 
 def table_name(suffix: str, *, prefix: str | None = None) -> str:
-    """``agno-harness-sessions`` by default, or ``ipv_sessions`` / ``ipv-agent-sessions`` when prefixed."""
+    """``agno-harness-sessions`` by default, or ``admin_agent_sessions`` / ``admin-agent-sessions`` when prefixed."""
     p = resolve_prefix(prefix)
     if "-" in p:
         sep = "-"

@@ -1,4 +1,4 @@
-"""Table names share one prefix. The default is agno-harness-."""
+"""Table names share one prefix. The default is agno_harness_."""
 
 import pytest
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -20,20 +20,21 @@ class _Base(DeclarativeBase):
 
 
 def test_the_default_prefix_is_agno_harness():
-    assert table_name("sessions") == "agno-harness-sessions"
-    assert table_name("runs") == "agno-harness-runs"
-    assert get_or_create_session_model().__tablename__ == "agno-harness-conversation-sessions"
+    assert table_name("sessions") == "agno_harness_sessions"
+    assert table_name("runs") == "agno_harness_runs"
+    assert get_or_create_session_model().__tablename__ == "agno_harness_conversation_sessions"
 
 
-def test_a_caller_can_choose_ipv_agent_or_admin_agent():
-    assert table_name("sessions", prefix="ipv-agent") == "ipv-agent-sessions"
-    assert table_name("sessions", prefix="admin-agent") == "admin-agent-sessions"
-    assert resolve_prefix("ipv-agent-") == "ipv-agent"
+def test_a_caller_can_choose_user_agent_or_admin_agent():
+    assert table_name("sessions", prefix="user-agent") == "user-agent-sessions"
+    assert table_name("sessions", prefix="admin_agent") == "admin_agent_sessions"
+    assert resolve_prefix("user-agent-") == "user-agent"
+    assert resolve_prefix("admin_agent_") == "admin_agent"
 
 
 def test_a_prefix_with_spaces_or_punctuation_is_rejected():
     with pytest.raises(ValueError):
-        table_name("sessions", prefix="ipv agent")
+        table_name("sessions", prefix="bad agent")
 
 
 def test_apply_table_prefix_renames_the_agno_tables_that_exist():
@@ -43,14 +44,14 @@ def test_apply_table_prefix_renames_the_agno_tables_that_exist():
         tool_results_table_name = "agno_tool_results"
 
     db = Db()
-    apply_table_prefix(db, "ipv-agent")
-    assert db.session_table_name == "ipv-agent-sessions"
-    assert db.runs_table_name == "ipv-agent-runs"
-    assert db.tool_results_table_name == "ipv-agent-tool-results"
+    apply_table_prefix(db, "user-agent")
+    assert db.session_table_name == "user-agent-sessions"
+    assert db.runs_table_name == "user-agent-runs"
+    assert db.tool_results_table_name == "user-agent-tool-results"
 
     plain = Db()
     apply_table_prefix(plain)
-    assert plain.session_table_name == "agno-harness-sessions"
+    assert plain.session_table_name == "agno_harness_sessions"
 
 
 def test_register_harness_models_declares_every_table_under_one_prefix():
@@ -70,10 +71,10 @@ def test_register_harness_models_declares_every_table_under_one_prefix():
 
 
 def test_harness_metadata_is_ready_for_alembic():
-    metadata = harness_metadata("ipv-agent", _Base)
+    metadata = harness_metadata("user-agent", _Base)
     assert metadata is _Base.metadata
-    assert "ipv-agent-conversation-sessions" in metadata.tables
-    assert "ipv-agent-run-archives" in metadata.tables
+    assert "user-agent-conversation-sessions" in metadata.tables
+    assert "user-agent-run-archives" in metadata.tables
 
 
 def test_harness_metadata_reads_the_env_prefix(monkeypatch):
@@ -93,10 +94,10 @@ def test_register_on_the_project_base_keeps_target_metadata():
         __tablename__ = "notes"
         id: Mapped[int] = mapped_column(primary_key=True)
 
-    register_harness_models("ipv-agent", AppBase)
+    register_harness_models("user-agent", AppBase)
     target_metadata = AppBase.metadata
     assert "notes" in target_metadata.tables
-    assert "ipv-agent-message-audits" in target_metadata.tables
+    assert "user-agent-message-audits" in target_metadata.tables
 
 
 def test_include_harness_keeps_the_project_tables():
@@ -107,10 +108,10 @@ def test_include_harness_keeps_the_project_tables():
         __tablename__ = "notes"
         id: Mapped[int] = mapped_column(primary_key=True)
 
-    combined = include_harness(AppBase.metadata, "ipv-agent")
+    combined = include_harness(AppBase.metadata, "user-agent")
     assert combined[0] is AppBase.metadata
     assert "notes" in combined[0].tables
-    assert "ipv-agent-conversation-sessions" in combined[1].tables
+    assert "user-agent-conversation-sessions" in combined[1].tables
     assert "notes" not in combined[1].tables
 
 

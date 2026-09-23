@@ -34,7 +34,7 @@ from typing import Any
 
 from ..core.streamui import CardCatalog
 from ..stores.registry import Stores
-from .replay import session_to_messages, thread_summary_from_session
+from .replay import session_to_messages
 
 
 class FramesUnavailable(RuntimeError):
@@ -113,36 +113,15 @@ class ThreadService:
     async def list_threads(self, *, user_id: str | None = None) -> list[dict[str, Any]]:
         """This user's threads, newest first.
 
-        List is a projection: title + ``runCount`` (user turns). It must not
-        rebuild transcripts via ``session_to_messages``. ``messageCount`` is
-        deprecated and always ``0``.
+        List is a projection from the dedicated ThreadStore backed by the database.
         """
-        if getattr(self.stores, "threads", None) is not None:
-            store_threads = await self.stores.threads.list_threads(user_id=user_id)
-            if store_threads:
-                return store_threads
-
-        threads: list[dict[str, Any]] = []
-        for session in await self.get_sessions(user_id=user_id):
-            row = thread_summary_from_session(session)
-            if row is not None:
-                threads.append(row)
-        threads.sort(key=lambda t: t.get("updatedAt") or 0, reverse=True)
-        return threads
+        return await self.stores.threads.list_threads(user_id=user_id)
 
     async def get_thread(
         self, thread_id: str, *, user_id: str | None = None
     ) -> dict[str, Any] | None:
-        """Get a single thread's metadata and status."""
-        if getattr(self.stores, "threads", None) is not None:
-            thread = await self.stores.threads.get_thread(thread_id, user_id=user_id)
-            if thread is not None:
-                return thread
-
-        session = await self.get_session(thread_id, user_id=user_id)
-        if session is not None:
-            return thread_summary_from_session(session)
-        return None
+        """Get a single thread's metadata and status directly from ThreadStore."""
+        return await self.stores.threads.get_thread(thread_id, user_id=user_id)
 
     async def delete_thread(
         self, thread_id: str, *, user_id: str | None = None, hard: bool = False
@@ -162,8 +141,7 @@ class ThreadService:
                     deleted = await deleted
                 deleted_in_db = bool(deleted)
             except Exception as exc:  # noqa: BLE001
-                if not deleted_in_store:
-                    return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
         if not deleted_in_store and not deleted_in_db:
             return {"ok": False, "error": "thread not found"}

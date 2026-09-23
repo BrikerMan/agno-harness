@@ -28,7 +28,7 @@ from agno_harness.db import AgnoHarnessSqliteDb
 agno_db = SqliteDb(db_file="data/agent.db")
 
 # 2. Harness DB（UI 事件流、交互卡片、消息审计、会话管理）
-agno_harness_db = AgnoHarnessSqliteDb(db_file="data/agent.db", prefix="ipv")
+agno_harness_db = AgnoHarnessSqliteDb(db_file="data/agent.db", prefix="admin_agent")
 ```
 
 PostgreSQL 生产环境：
@@ -37,12 +37,12 @@ from agno.db.async_postgres import AsyncPostgresDb
 from agno_harness.db import AgnoHarnessPostgresDb
 
 # 独立 URL 模式
-agno_harness_db = AgnoHarnessPostgresDb(db_url=settings.database_url, prefix="ipv")
+agno_harness_db = AgnoHarnessPostgresDb(db_url=settings.database_url, prefix="admin_agent")
 
 # 或复用已有的 SQLAlchemy async_session_factory（如现有 FastAPI/Django 服务）
 agno_harness_db = AgnoHarnessPostgresDb.from_session_factory(
     db.async_session_factory,
-    prefix="ipv",
+    prefix="admin_agent",
 )
 ```
 
@@ -70,7 +70,7 @@ runtime = AgentRuntime(
 `AgentRuntime` 会自动：
 1. 将 `harness_db.prefix` 对齐到 `agent.db`。
 2. 自动构建并绑定持久化 `stores`。
-3. 启动检查或补齐 7 张核心表。
+3. 启动检查或补齐 8 张核心表。
 
 ---
 
@@ -82,7 +82,7 @@ runtime = AgentRuntime(
 - `auto_create=True`（默认值）。
 - 启动时自动检查缺失的 harness 表，并直接补齐。
 - 输出警告日志提醒生产推荐规范迁移：
-  > `[agno-harness] ⚠️ Initialized harness tables automatically for prefix 'ipv'. For production environments, it is recommended to manage schema versions via AlembicMigrator.declare_models(Base).`
+  > `[agno-harness] ⚠️ Initialized harness tables automatically for prefix 'admin_agent'. For production environments, it is recommended to manage schema versions via AlembicMigrator.declare_models(Base).`
 - 若数据库中已存在 `alembic_version` 表，`auto_create` 会自动跳过并引导使用 Alembic，避免本地产生空 diff。
 
 ### 模式 B：企业级 Alembic 规范迁移
@@ -95,10 +95,10 @@ from agno_harness.db import AlembicMigrator
 from app.models.base import Base
 
 # 单个 Agent
-AlembicMigrator.declare_models(base=Base, prefix="ipv")
+AlembicMigrator.declare_models(base=Base, prefix="admin_agent")
 
 # 多 Agent 共享数据库时注册多次
-AlembicMigrator.declare_models(base=Base, prefix="admin")
+AlembicMigrator.declare_models(base=Base, prefix="user_agent")
 ```
 
 随后执行标准迁移流程：
@@ -113,17 +113,31 @@ alembic upgrade head
 
 ## 前缀与多 Agent 隔离
 
-前缀支持字母、数字、下划线 `_` 和短横线 `-`（如 `ipv` 或 `ipv_agent`）。
-如果前缀包含 `_`，生成的表名采用下划线风格（如 `ipv_conversation_sessions`），完全符合 PostgreSQL 规范与现有 DBA 习惯。
+前缀支持字母、数字、下划线 `_` 和短横线 `-`（如 `admin_agent` 或 `admin-agent`）。
+如果前缀包含 `_`，生成的表名采用下划线风格（如 `admin_agent_conversation_sessions`），完全符合 PostgreSQL 规范与现有 DBA 习惯。
 
-7 张表完整列表：
-1. `conversation_sessions`
-2. `actions`
-3. `message_audits`
-4. `custom_events`
-5. `run_frames`
-6. `run_records`
-7. `run_archives`
+8 张表完整列表：
+1. `threads`（会话列表与生命周期状态第一等公民）
+2. `conversation_sessions`
+3. `actions`
+4. `message_audits`
+5. `custom_events`
+6. `run_frames`
+7. `run_records`
+8. `run_archives`
+
+---
+
+## 依赖原则：数据库必须有，Redis 可用内存替代
+
+在 `agno-harness` 中，外部持久化与流转依赖的定位非常清晰：
+
+1. **关系型数据库（SQLite / PostgreSQL）是必须的，不支持无数据库运行**：
+   - 所有的业务实体、UI 会话（`threads`）、会话生命周期、审计日志与归档 frames 均持久化于数据库。
+   - `GET /api/v1/threads` 强依赖数据库中的 `threads` 表毫秒级返回，不再从 Agno 庞大的 session runs 中慢速解析反序列化。
+2. **Redis 是可选的，支持内存（In-Memory）替代**：
+   - Redis 仅用于实时 token 级热事件流（`event_log` / `event_stream`）、阻塞式 Tail 与断点续传（`attach`）。
+   - 在单进程、本地开发或轻量级部署中，完全可以使用 `InMemoryRunEventLog` 作为进程内替代方案，无需强制启动独立 Redis 实例。
 
 ---
 

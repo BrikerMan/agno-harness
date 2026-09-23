@@ -19,7 +19,7 @@ class AlembicMigrator:
         base:
             Your project's declarative Base (e.g. ``Base = declarative_base()``).
         prefix:
-            Table prefix (e.g. ``"ipv"``, ``"admin"``). Defaults to ``"agno-harness"``
+            Table prefix (e.g. ``"admin_agent"``, ``"admin"``). Defaults to ``"agno_harness"``
             or the ``AGNO_HARNESS_TABLE_PREFIX`` environment variable.
         """
         return register_harness_models(prefix=prefix, base=base)

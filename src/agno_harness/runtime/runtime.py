@@ -67,7 +67,7 @@ from .replay import last_user_text
 from .runner import AgentRunner
 from .scope import RunScope
 from .state import StateTracker
-from .storage_guard import check_history_pairing
+from .storage_guard import agno_db_is_persistent, check_history_pairing
 from .threads import ThreadService
 from .titles import EVENT_THREAD_TITLE
 from .titles import generate_thread_title as _generate_thread_title
@@ -159,6 +159,13 @@ class AgentRuntime:
 
             if stores is None and hasattr(self.harness_db, "build_stores"):
                 stores = self.harness_db.build_stores()
+        elif self.db is not None and agno_db_is_persistent(self.db):
+            with contextlib.suppress(Exception):
+                from ..db.classes import AgnoHarnessDb
+
+                self.harness_db = AgnoHarnessDb.from_agno_db(self.db)
+                if stores is None and hasattr(self.harness_db, "build_stores"):
+                    stores = self.harness_db.build_stores()
 
         self.stores = stores or Stores()
         check_history_pairing(self.db, self.stores, allow_ephemeral_agno_db=allow_ephemeral_agno_db)

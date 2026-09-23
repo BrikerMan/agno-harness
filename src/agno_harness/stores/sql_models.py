@@ -62,8 +62,8 @@ def register_harness_models(
 
     Call this with the same ``Base`` Alembic already uses. ``target_metadata``
     stays ``Base.metadata`` and autogenerate picks up the new tables.
-    ``prefix=None`` uses ``agno-harness``. ``prefix="ipv"`` yields
-    ``ipv_conversation_sessions`` and the rest of the set.
+    ``prefix=None`` uses ``agno_harness`` (yielding ``agno_harness_conversation_sessions``).
+    ``prefix="admin_agent"`` yields ``admin_agent_conversation_sessions`` and the rest of the set.
     """
     if prefix is not None and not isinstance(prefix, str):
         base = prefix
@@ -78,7 +78,7 @@ def harness_metadata(prefix: str | None = None, base: Any | None = None) -> Meta
     """Metadata for the harness tables alone.
 
     ``prefix`` defaults to the ``AGNO_HARNESS_TABLE_PREFIX`` environment
-    variable, then to ``agno-harness``. Pass the result to :func:`include_harness`
+    variable, then to ``agno_harness``. Pass the result to :func:`include_harness`
     so an existing Alembic ``target_metadata`` keeps the project's own tables.
     """
     if prefix is not None and not isinstance(prefix, str):

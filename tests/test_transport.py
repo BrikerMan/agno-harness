@@ -107,7 +107,10 @@ class TestHistoryRoutes:
     @pytest.fixture
     def client(self):
         db = FakeDb([FakeSession("t1", runs=[FakeRun("r1", FakeInput("hello"), "Hi there.")])])
-        client, _ = make_client(db=db)
+        client, runtime = make_client(db=db)
+        import asyncio
+
+        asyncio.run(runtime.stores.threads.start_turn("t1", title="hello"))
         return client
 
     def test_threads_are_listed(self, client):

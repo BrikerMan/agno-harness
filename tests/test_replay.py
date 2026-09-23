@@ -306,6 +306,8 @@ class TestRuntimeHistory:
                 ]
             ),
         )
+        await runtime.stores.threads.start_turn("old", title="older")
+        await runtime.stores.threads.start_turn("new", title="newer")
         threads = await runtime.list_threads()
         assert [t["threadId"] for t in threads] == ["new", "old"]
         assert threads[0]["title"] == "newer"
@@ -317,6 +319,7 @@ class TestRuntimeHistory:
         await store.save("t1", "r1", "billing", {})
         db = FakeDb([FakeSession("t1", runs=[FakeRun("r1", FakeInput("hi"), "a")])])
         runtime = AgentRuntime(agent=FakeAgent(), db=db, stores=Stores(custom_events=store))
+        await runtime.stores.threads.start_turn("t1", title="hi")
         assert (await runtime.delete_thread("t1"))["ok"] is True
         assert db.deleted == ["t1"]
         assert await store.list_by_thread("t1") == []
@@ -327,6 +330,7 @@ class TestRuntimeHistory:
                 raise RuntimeError("locked")
 
         runtime = AgentRuntime(agent=FakeAgent(), db=BrokenDb([]))
+        await runtime.stores.threads.start_turn("t1")
         result = await runtime.delete_thread("t1")
         assert result["ok"] is False
         assert "locked" in result["error"]
