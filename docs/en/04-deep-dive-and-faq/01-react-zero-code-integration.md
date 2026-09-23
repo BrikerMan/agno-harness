@@ -12,7 +12,7 @@ When you upgrade to `agno-harness`, **the frontend needs no breaking rewrite**. 
 
 The execution kernel `AgentRuntime` follows the standard AG-UI transport:
 
-- **Same endpoint**: `POST /agui/runs` (or a custom prefix)
+- **Same endpoint**: `POST /api/v1/channels/web/agui/runs` (or a custom prefix)
 - **Same request**: standard `RunAgentInput` (`thread_id`, `run_id`, `messages`, `state`, `context`)
 - **Same SSE frames**: `event: run_started`, `event: text_message_content`, `event: custom`, `event: run_finished`
 - **Same keepalive**: `: ping\n\n` comment frames every 5 seconds by default, so ALB / Nginx never idle-cut the stream
@@ -44,7 +44,7 @@ When a backend tool needs confirmation, the frontend gets a `CUSTOM` frame:
 ```
 
 **Frontend response**:
-On `name === "run.paused"`, show a dialog or approval card. After the user clicks Approve, POST to `/agui/runs` again with a resume payload:
+On `name === "run.paused"`, show a dialog or approval card. After the user clicks Approve, POST to `/api/v1/channels/web/agui/runs` again with a resume payload:
 
 ```typescript
 const resumePayload = {
@@ -96,7 +96,7 @@ To debug long threads, multi-turn context, token spend, and stream drops, host a
 ### How to mount it
 
 ```tsx
-import { DebugPanel } from './agui-devtools/DebugPanel';
+import { DebugPanel } from './api/v1/channels/web/agui-devtools/DebugPanel';
 
 function App() {
   return (

@@ -6,11 +6,11 @@
 
 ## 五条
 
-1. **一个 `applyEvent`，live 和 replay 共用。** 禁止从 Agno `GET /threads/{id}/messages` 重建再自己分组。
+1. **一个 `applyEvent`，live 和 replay 共用。** 禁止从 Agno `GET /api/v1/threads/{id}/messages` 重建再自己分组。
 2. **只渲染 `body.order[]`。** slot 在元素**打开**时 push。工具出现在 markdown 下面 = 客户端重排了，不是 runtime 的错。
 3. **历史走 `/frames`，不是 `/messages`。** `/messages` 是给模型的 lossy session。
 4. **只有用户往上滚才脱离吸附。** 内容变高导致的 `scrollTop` 变不算脱离。
-5. **Stop ≠ 断线。** 关 tab / 闪退 / 断网只是不看了。`POST /runs/{id}/abort` 只对应 Stop（以及产品明确「丢掉这次任务」）。
+5. **Stop ≠ 断线。** 关 tab / 闪退 / 断网只是不看了。`POST /api/v1/runs/{id}/abort` 只对应 Stop（以及产品明确「丢掉这次任务」）。
 
 ## 对照
 

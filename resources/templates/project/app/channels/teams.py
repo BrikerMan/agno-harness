@@ -1,4 +1,4 @@
-"""Teams channel. Webhook is POST /api/messages.
+"""Teams channel. Webhook is POST /api/v1/channels/teams/messages.
 
 Extend
 ------

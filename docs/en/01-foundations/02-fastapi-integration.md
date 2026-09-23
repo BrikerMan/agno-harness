@@ -77,10 +77,10 @@ app.include_router(
 ### What the mount gives you
 
 - `GET /agent/health`: readiness probe; `{ status, channels, resumeMode }` (`none` / `history` / `live`). The React kit reads `resumeMode` before the first send.
-- `POST /agent/agui`: standard AG-UI SSE pipe;
+- `POST /agent/api/v1/channels/web/agui`: standard AG-UI SSE pipe;
 - `GET /agent/threads`: thread list isolated to the authenticated user;
 - `GET /agent/threads/{id}/messages`: history replay;
-- If you `relay.add_channel(teams_channel)`, the Teams webhook is `POST /agent/api/messages`. The channel route is always `/api/messages`; the router `prefix` is prepended. There is no `/agent/teams/messages` route.
+- If you `relay.add_channel(teams_channel)`, the Teams webhook is `POST /agent/api/v1/channels/teams/messages`. The channel route is always `/api/v1/channels/teams/messages`; the router `prefix` is prepended.
 
 ---
 
@@ -106,7 +106,7 @@ router = relay.get_router(resolve_user_id=resolve_user)
 
 ### Runtime 401
 
-On `POST /agui` or `GET /threads`:
+On `POST /api/v1/channels/web/agui` or `GET /threads`:
 - If `resolve_user_id(request)` returns `None`, the gateway **returns `HTTP 401 Unauthorized` immediately**;
 - It never falls back to anonymous execution, so an unauthenticated caller cannot read or write another session.
 

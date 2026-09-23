@@ -1,33 +1,33 @@
 # 04. Refresh-and-resume: attach / cursor / ping / idle
 
-Read `X-Agui-Resume` from the response. Do not guess. Before the first send, `GET /health` returns `resumeMode` (`none` / `history` / `live`) — the [frontend-kit](../../../../resources/frontend-kit/README.md) will not attach on refresh if that field is missing. `404` on `/runs/*` means `long_runs` is not mounted. Long jobs use `POST /agui?long-run=1` (alias `?detach=1`). Storage duties → [persistence](../../01-foundations/05-persistence-and-longruns/README.md).
+Read `X-Agui-Resume` from the response. Do not guess. Before the first send, `GET /api/v1/health` returns `resumeMode` (`none` / `history` / `live`) — the [frontend-kit](../../../../resources/frontend-kit/README.md) will not attach on refresh if that field is missing. `404` on `/api/v1/runs/*` means `long_runs` is not mounted. Long jobs use `POST /api/v1/channels/web/agui?long-run=1` (alias `?detach=1`). Storage duties → [persistence](../../01-foundations/05-persistence-and-longruns/README.md).
 
 | | `X-Agui-Resume: none` | `history` | `live` |
 | --- | --- | --- | --- |
-| Tab close / crash / drop | Connection dies, the run dies | Run continues; you only see written frames | Run continues; `GET /runs/{id}/attach?after=` picks up mid-sentence |
-| Stop | Abort this HTTP | Abort the connection + `POST /runs/{id}/abort` | Same |
+| Tab close / crash / drop | Connection dies, the run dies | Run continues; you only see written frames | Run continues; `GET /api/v1/runs/{id}/attach?after=` picks up mid-sentence |
+| Stop | Abort this HTTP | Abort the connection + `POST /api/v1/runs/{id}/abort` | Same |
 | Refresh | Whatever already landed | `/frames` up to the write point | `/frames` + attach `?after=` |
-| Routes | No `/runs/*` | Yes | Yes |
+| Routes | No `/api/v1/runs/*` | Yes | Yes |
 
-Closing a tab or crashing is **not** stop. `POST /runs/{id}/abort` is only Stop. `AbortController.abort()` stops the connection; `LongRunManager.abort()` stops the run.
+Closing a tab or crashing is **not** stop. `POST /api/v1/runs/{id}/abort` is only Stop. `AbortController.abort()` stops the connection; `LongRunManager.abort()` stops the run.
 
 ## 1. Call it attach, not stream
 
-Canonical: `GET /runs/{runId}/attach?after=`
+Canonical: `GET /api/v1/runs/{runId}/attach?after=`
 
 | Name | Meaning | Client use |
 | --- | --- | --- |
 | **attach** | Rejoin an in-flight / just-finished run over SSE | **The only path to write** |
-| `/runs/{id}/stream` | Deprecated, same as `/attach` | Do not write new code against it |
-| `/threads/{id}/frames` | Replay stored display frames | Open / refresh history; **not** live |
-| `/threads/{id}/messages` | Agno session (lossy) | **Not** the UI transcript |
+| `/api/v1/runs/{id}/stream` | Deprecated, same as `/attach` | Do not write new code against it |
+| `/api/v1/threads/{id}/frames` | Replay stored display frames | Open / refresh history; **not** live |
+| `/api/v1/threads/{id}/messages` | Agno session (lossy) | **Not** the UI transcript |
 
 Never mix the two cursors:
 
 | Cursor | Shape | Only for |
 | --- | --- | --- |
-| attach / SSE `id:` | One-run log offset (e.g. `000000000012`) | `GET /runs/{id}/attach?after=` or `Last-Event-ID` |
-| frames | `{runId}:{paddedOffset}` | `GET /threads/{id}/frames?after=` |
+| attach / SSE `id:` | One-run log offset (e.g. `000000000012`) | `GET /api/v1/runs/{id}/attach?after=` or `Last-Event-ID` |
+| frames | `{runId}:{paddedOffset}` | `GET /api/v1/threads/{id}/frames?after=` |
 
 ## 2. The product must do this
 
@@ -48,7 +48,7 @@ type SessionCursor = {
 ### B. Send
 
 ```ts
-await postSse(`${API}/agui?long-run=1`, runAgentInput, {
+await postSse(`${API}/api/v1/channels/web/agui?long-run=1`, runAgentInput, {
   signal: abortController.signal,
   onFrame: (frame) => {
     if (frame.id) lastEventId = frame.id;
@@ -68,14 +68,14 @@ The SSE reader **must**:
 1. Any network byte (including a `:`-only comment) → reset idle.
 2. After seeing a heartbeat, idle ≈ **3× the interval** (about 6–30s; ~15s if no heartbeat seen).
 3. Timeout → a recognizable `AbortError` (e.g. `cause: "sse-idle"`). **Not** user Stop.
-4. If `resumeMode !== "none"` and it is not Stop → immediately `GET /runs/${runId}/attach?after=${lastEventId}` into the same reducer.
+4. If `resumeMode !== "none"` and it is not Stop → immediately `GET /api/v1/runs/${runId}/attach?after=${lastEventId}` into the same reducer.
 
 Stop:
 
 ```ts
 stopping = true;
 abortController.abort();
-await fetch(`${API}/runs/${runId}/abort`, { method: "POST" });
+await fetch(`${API}/api/v1/runs/${runId}/abort`, { method: "POST" });
 ```
 
 **Wrong:** treat “no AG-UI event” as a dead connection; abort the run on idle; attach with a `/frames` id.
@@ -85,10 +85,10 @@ await fetch(`${API}/runs/${runId}/abort`, { method: "POST" });
 ```text
 1. Read resumeMode
 2. Read localStorage session
-3. GET /threads/{threadId}/frames
+3. GET /api/v1/threads/{threadId}/frames
 4. Same applyEvent into the transcript
-5. GET /threads/{threadId}/active
-6. If running: GET /runs/{runId}/attach?after={lastEventId}
+5. GET /api/v1/threads/{threadId}/active
+6. If running: GET /api/v1/runs/{runId}/attach?after={lastEventId}
 7. Before attach, set currentId back to assistant-${runId}
 ```
 
@@ -107,7 +107,7 @@ flowchart TD
 
 ### E. Sidebar merge
 
-`GET /threads` `runCount` is how many times a human spoke; ignore `messageCount`. If the active thread is not on disk yet, pin an optimistic row (see [02](02-thread-shell.md)).
+`GET /api/v1/threads` `runCount` is how many times a human spoke; ignore `messageCount`. If the active thread is not on disk yet, pin an optimistic row (see [02](02-thread-shell.md)).
 
 ### F. Checklist
 

@@ -27,7 +27,7 @@ def demo_client() -> TestClient:
 
 
 def test_demo_health_contract(demo_client: TestClient) -> None:
-    response = demo_client.get("/health")
+    response = demo_client.get("/api/v1/health")
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
@@ -59,5 +59,5 @@ def test_demo_settings_and_agui_routes(demo_client: TestClient) -> None:
     settings = demo_client.get("/settings")
     assert settings.status_code == 200
 
-    threads = demo_client.get("/threads", headers={"X-Demo-User": "demo-user"})
+    threads = demo_client.get("/api/v1/threads", headers={"X-Demo-User": "demo-user"})
     assert threads.status_code == 200

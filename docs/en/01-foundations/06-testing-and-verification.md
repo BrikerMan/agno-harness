@@ -52,9 +52,9 @@ app.include_router(relay.get_router(resolve_user_id=lambda req: req.headers.get(
 
 client = TestClient(app)
 # No auth header → 401
-assert client.post("/agui", json={...}).status_code == 401
+assert client.post("/api/v1/channels/web/agui", json={...}).status_code == 401
 # Valid auth header → 200
-assert client.post("/agui", headers={"X-User-Id": "u1"}, json={...}).status_code == 200
+assert client.post("/api/v1/channels/web/agui", headers={"X-User-Id": "u1"}, json={...}).status_code == 200
 ```
 
 ### 2.3 Replace resolvers on a Golden Trace

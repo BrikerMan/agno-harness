@@ -49,9 +49,9 @@ app.include_router(relay.get_router(resolve_user_id=lambda req: req.headers.get(
 
 client = TestClient(app)
 # 未提供认证头返回 401
-assert client.post("/agui", json={...}).status_code == 401
+assert client.post("/api/v1/channels/web/agui", json={...}).status_code == 401
 # 携带合法认证头通过
-assert client.post("/agui", headers={"X-User-Id": "u1"}, json={...}).status_code == 200
+assert client.post("/api/v1/channels/web/agui", headers={"X-User-Id": "u1"}, json={...}).status_code == 200
 ```
 
 ### 2.3 Golden Trace 替换 resolver

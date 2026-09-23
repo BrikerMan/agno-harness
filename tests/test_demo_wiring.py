@@ -585,10 +585,10 @@ class TestModelSettings:
 
     def test_the_router_keeps_working_after_a_swap(self, client):
         """The runtime is mutated in place, so the mounted router stays valid."""
-        before = client.get("/health").json()["sequencerMode"]
+        before = client.get("/api/v1/health").json()["sequencerMode"]
         client.put("/settings", json={"model": "deepseek-chat", "apiKey": "sk-abcd1234"})
 
-        assert client.get("/health").json()["sequencerMode"] == before
+        assert client.get("/api/v1/health").json()["sequencerMode"] == before
         assert app_main.state["runtime"].agent is app_main.state["agent"]
 
     def test_the_key_is_write_only(self, client):
@@ -596,7 +596,7 @@ class TestModelSettings:
 
         assert "supersecret" not in response.text
         assert response.json()["apiKeyHint"] == "…9999"
-        assert "supersecret" not in client.get("/health").text
+        assert "supersecret" not in client.get("/api/v1/health").text
 
     def test_a_partial_update_keeps_the_key(self, client):
         client.put("/settings", json={"apiKey": "sk-abcd1234"})
@@ -646,11 +646,11 @@ class TestResumeWiring:
 
     def test_without_a_real_redis_the_demo_still_offers_live_resume(self, client):
         """An in-process stand-in is a Redis for one worker."""
-        assert client.get("/health").json()["resumeMode"] == "live"
-        assert client.get("/threads").headers.get("x-agui-resume") in (None, "live")
+        assert client.get("/api/v1/health").json()["resumeMode"] == "live"
+        assert client.get("/api/v1/threads").headers.get("x-agui-resume") in (None, "live")
 
     def test_frames_replay_is_available_from_the_archive(self, client):
-        response = client.get("/threads/unknown-thread/frames")
+        response = client.get("/api/v1/threads/unknown-thread/frames")
         assert response.status_code == 200
         assert response.json() == {"frames": []}
 

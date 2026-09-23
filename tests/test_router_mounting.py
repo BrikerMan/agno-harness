@@ -57,16 +57,16 @@ def test_mount_relay_router_into_external_fastapi(mock_runtime):
     assert resp.json() == [{"order_id": 101, "total": 99.5}]
 
     # 2. Health check mounted under prefix
-    health_resp = client.get("/agent-relay/health")
+    health_resp = client.get("/agent-relay/api/v1/health")
     assert health_resp.status_code == 200
     assert health_resp.json()["status"] == "healthy"
     assert health_resp.json()["resumeMode"] == "none"
 
     payload = make_input().model_dump(by_alias=True, mode="json")
 
-    # 3. Unauthenticated request to /agui gets HTTP 401
+    # 3. Unauthenticated request to /api/v1/channels/web/agui gets HTTP 401
     post_resp = client.post(
-        "/agent-relay/agui",
+        "/agent-relay/api/v1/channels/web/agui",
         json=payload,
     )
     assert post_resp.status_code == 401
@@ -74,7 +74,7 @@ def test_mount_relay_router_into_external_fastapi(mock_runtime):
 
     # 4. Authenticated request is accepted
     auth_resp = client.post(
-        "/agent-relay/agui",
+        "/agent-relay/api/v1/channels/web/agui",
         headers={"Authorization": "Bearer secret-token"},
         json=payload,
     )
@@ -92,7 +92,7 @@ def test_allow_anonymous_for_local_dev(mock_runtime):
     client = TestClient(app)
     payload = make_input().model_dump(by_alias=True, mode="json")
     resp = client.post(
-        "/agui",
+        "/api/v1/channels/web/agui",
         json=payload,
     )
     assert resp.status_code == 200
@@ -193,7 +193,7 @@ async def test_fastapi_lifespan_integration(mock_runtime):
     with TestClient(app) as client:
         # relay._running should be True during lifespan
         assert relay._running is True
-        resp = client.get("/health")
+        resp = client.get("/api/v1/health")
         assert resp.status_code == 200
 
     # after context exit, relay._running should be False
@@ -211,7 +211,7 @@ def test_web_channel_does_not_conflict_with_make_relay_router(mock_runtime):
     app.include_router(router)
 
     client = TestClient(app)
-    resp = client.get("/health")
+    resp = client.get("/api/v1/health")
     assert resp.status_code == 200
     assert "web" in resp.json()["channels"]
     assert resp.json()["resumeMode"] == "none"
@@ -225,5 +225,5 @@ def test_health_resume_mode_is_live_when_long_runs_can_follow(mock_runtime):
     long_runs = LongRunManager(mock_runtime, log=log)
     app = FastAPI()
     app.include_router(make_relay_router(mock_runtime, allow_anonymous=True, long_runs=long_runs))
-    body = TestClient(app).get("/health").json()
+    body = TestClient(app).get("/api/v1/health").json()
     assert body["resumeMode"] == "live"

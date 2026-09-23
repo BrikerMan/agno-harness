@@ -8,6 +8,26 @@ from ..core.streamui.schema import CardCatalog
 from ..runtime.closure import strip_stream_ui
 
 
+def _text_body_fragment(
+    platform: str,
+    text: str,
+    *,
+    font: str = "",
+    code: bool = False,
+) -> Any:
+    """Turn a text-body card's raw text into one platform fragment."""
+    if platform == "teams":
+        if code:
+            return {"type": "CodeBlock", "codeSnippet": text, "language": "PlainText"}
+        block: dict[str, Any] = {"type": "TextBlock", "text": text, "wrap": True}
+        if font:
+            block["fontType"] = font
+        return block
+    if platform == "lark":
+        return {"tag": "div", "text": {"tag": "lark_md", "content": text}}
+    return text
+
+
 def _render_hitl_card(
     platform: str,
     descriptor: dict[str, Any],
@@ -159,6 +179,11 @@ class MessageCollector:
                 }
                 self.rendered_items = []
 
+            elif name == "ui.text":
+                delta = value.get("delta") if isinstance(value, dict) else ""
+                if self.current_block is not None and isinstance(delta, str) and delta:
+                    self.current_block["text"] = self.current_block.get("text", "") + delta
+
             elif name == "ui.item":
                 item_name = value.get("name", "")
                 data = value.get("data", {})
@@ -174,6 +199,17 @@ class MessageCollector:
 
             elif name == "ui.block.end":
                 if self.current_block is not None and self.catalog is not None:
+                    text = str(self.current_block.get("text") or "").strip()
+                    if text:
+                        schema = self.catalog.block_schema(str(self.current_block.get("name") or ""))
+                        self.rendered_items.append(
+                            _text_body_fragment(
+                                self.platform,
+                                text,
+                                font=str(getattr(schema, "teams_text_font", "") or ""),
+                                code=bool(getattr(schema, "teams_code_block", False)),
+                            )
+                        )
                     block_name = self.current_block["name"]
                     props = self.current_block["props"]
                     card = self.catalog.render_block(

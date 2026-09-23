@@ -12,10 +12,11 @@ from .teams import (
     TeamsServiceUrlError,
     teams_messaging_endpoint,
 )
-from .web import WebChannel
+from .web import WEB_AGUI_PATH, WebChannel
 
 __all__ = [
     "TEAMS_MESSAGES_PATH",
+    "WEB_AGUI_PATH",
     "BaseChannel",
     "CLIChannel",
     "LarkChannel",

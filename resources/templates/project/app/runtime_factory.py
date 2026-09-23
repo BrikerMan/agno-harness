@@ -19,7 +19,8 @@ from agno_harness import (
 )
 from app.agents.main.agent import build as build_main
 from app.agents.main.cards import CARD_CATALOG
-from app.paths import AGENT_DB, SESSIONS_DB, ensure_data
+from app.agents.main.tools.background_task import bind as bind_background_task
+from app.paths import AGENT_DB, ensure_data
 
 
 def build_relay() -> RelayApp:
@@ -32,7 +33,9 @@ def build_relay() -> RelayApp:
         enable_subagent_streaming=True,
     )
     runtime.register_tool_filter(HideToolFilter({SubAgentToolkit.TOOL_NAME, "load_skill"}))
-    return RelayApp(
+    relay = RelayApp(
         runtime=runtime,
-        session_manager=SessionManager(store=SQLiteSessionStore(str(SESSIONS_DB))),
+        session_manager=SessionManager(store=SQLiteSessionStore(str(AGENT_DB))),
     )
+    bind_background_task(relay)
+    return relay

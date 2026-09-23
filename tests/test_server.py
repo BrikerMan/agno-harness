@@ -42,7 +42,7 @@ def test_relay_server_basic_and_health(mock_runtime):
     server = RelayServer(relay, allow_anonymous=True)
 
     client = TestClient(server)
-    response = client.get("/health")
+    response = client.get("/api/v1/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"

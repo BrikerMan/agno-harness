@@ -44,7 +44,7 @@ sequenceDiagram
     participant LLM as Agno Agent (LLM + Search)
 
     User->>Azure: @bot search Python 3.13 features
-    Azure->>Channel: POST /api/messages
+    Azure->>Channel: POST /api/v1/channels/teams/messages
 
     rect rgb(240, 248, 255)
     Note over Azure,Channel: Fast ACK — stop the retry storm
@@ -132,7 +132,7 @@ relay.add_channel(TeamsChannel())
 
 app = FastAPI(title="Teams Agent Service", lifespan=relay.lifespan)
 
-# No router prefix: Azure Messaging endpoint is POST /api/messages.
+# No router prefix: Azure Messaging endpoint is POST /api/v1/channels/teams/messages.
 # allow_anonymous applies to AG-UI routes. The Teams webhook checks the Bot Framework JWT itself.
 app.include_router(relay.get_router(allow_anonymous=True))
 
@@ -156,7 +156,7 @@ ngrok http 8000
 Azure Portal → your Azure Bot → **Configuration** → Messaging endpoint:
 
 ```
-https://abc1234.ngrok-free.app/api/messages
+https://abc1234.ngrok-free.app/api/v1/channels/teams/messages
 ```
 
 ### C. Talk to the bot

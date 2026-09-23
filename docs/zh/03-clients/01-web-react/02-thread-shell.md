@@ -17,7 +17,7 @@ runtime.on_post_run(make_thread_title_hook(runtime))
 | 再触发 | `forwardedProps.refreshTitle === true` 时强制再生成。 |
 | 模型输入 | 第一轮：`scope.user_text` + completion。再触发：session 最近 `max_turns` 轮。 |
 | 落盘 | Agno session `session_data["session_name"]`。 |
-| `GET /threads` | `{ threadId, title, runCount, messageCount, updatedAt }`。`title` 先读已保存标题，没有才回退「首条用户消息[:40]」。`runCount` = 人说了几句。`messageCount` **已废弃，恒为 0**。无 run 的 session 不进列表。 |
+| `GET /api/v1/threads` | `{ threadId, title, runCount, messageCount, updatedAt }`。`title` 先读已保存标题，没有才回退「首条用户消息[:40]」。`runCount` = 人说了几句。`messageCount` **已废弃，恒为 0**。无 run 的 session 不进列表。 |
 | 事件 | `CUSTOM` `name="thread.title"` `value={ threadId, title }`。 |
 | 失败 | 不起名不影响主 run；侧栏保持「新任务」或用户消息回退。 |
 | LLM | 走 `agent.model` 短补全，**不要** `agent.arun()`。 |
@@ -26,12 +26,12 @@ runtime.on_post_run(make_thread_title_hook(runtime))
 
 - 新对话乐观行：**「新任务」**，禁止闪 UUID。
 - **发问即建档**：第一条消息发出时立刻在本地登记 `{ threadId, title: "新任务", runCount: 1, updatedAt }`。
-- **侧栏合并**：`GET /threads` 之后，若当前 `threadId` 仍有消息且不在服务端列表，置顶合并。首轮结束后服务端接管。
+- **侧栏合并**：`GET /api/v1/threads` 之后，若当前 `threadId` 仍有消息且不在服务端列表，置顶合并。首轮结束后服务端接管。
 - reducer：`thread.title` 更新当前标题；同一行 crossfade，不要 remount。
 
-没有 `POST /threads/{id}/title`。**错法：** 侧栏 `title || threadId`；为起名再打一条 HTTP。
+没有 `POST /api/v1/threads/{id}/title`。**错法：** 侧栏 `title || threadId`；为起名再打一条 HTTP。
 
-Agno 的 `AgentSession` 只有首个 run **完整结束**后才写入数据库。首轮进行中刷新，纯依赖 `GET /threads` 会让当前会话凭空消失。
+Agno 的 `AgentSession` 只有首个 run **完整结束**后才写入数据库。首轮进行中刷新，纯依赖 `GET /api/v1/threads` 会让当前会话凭空消失。
 
 ## 2. 四态侧栏
 
@@ -109,11 +109,11 @@ export function resolveThreadStatus({
 ## 3. 其余外壳
 
 - `threadId` 前端自己生成。读到别人的 thread 回 `404`，不要 `403`。换登录用户必须 `reset`。
-- 身份跟登录走（cookie / session），不要把 `userId` 放进 `POST /agui` 的 JSON。
+- 身份跟登录走（cookie / session），不要把 `userId` 放进 `POST /api/v1/channels/web/agui` 的 JSON。
 - 切 thread：abort **当前流**（连接）、`loadThread`、`stick.pin()`。切走 **不要** abort 已 long-run 的任务。
 - 删当前 thread：删完 `reset`。
 - Composer：Enter 发送 / Shift+Enter 换行；**`isStreaming` 或 `pendingTools.length > 0` 都要禁用新消息**。streaming 时按钮变 Stop。
-- Stop 才是「不要跑了」：`none` 下 abort 这条 HTTP；`long-run` 后还要 `POST /runs/{id}/abort`。关 tab **禁止**因此 abort。
+- Stop 才是「不要跑了」：`none` 下 abort 这条 HTTP；`long-run` 后还要 `POST /api/v1/runs/{id}/abort`。关 tab **禁止**因此 abort。
 - `forwardedProps.reasoning` → thinking budget；关 thinking 就不要画空 reasoning 条。
 - `dropEmptyTail`：中止后丢掉空 assistant 气泡。
 - `X-Agui-Protocol` 对不上要明确报，不要半渲染。

@@ -1,33 +1,33 @@
 # 04. 刷新续写：attach / cursor / ping / idle
 
-启动先读响应头 `X-Agui-Resume`。不要猜。第一次发送前 `GET /health` 返回 `resumeMode`（`none` / `history` / `live`）——缺这个字段，[frontend-kit](../../../../resources/frontend-kit/README_zh.md) 刷新不会 attach。`404` 在 `/runs/*` 上表示没挂 `long_runs`。长任务带 `POST /agui?long-run=1`（兼容 `?detach=1`）。存储职责 → [持久化](../../01-foundations/05-persistence-and-longruns/README.md)。
+启动先读响应头 `X-Agui-Resume`。不要猜。第一次发送前 `GET /api/v1/health` 返回 `resumeMode`（`none` / `history` / `live`）——缺这个字段，[frontend-kit](../../../../resources/frontend-kit/README_zh.md) 刷新不会 attach。`404` 在 `/api/v1/runs/*` 上表示没挂 `long_runs`。长任务带 `POST /api/v1/channels/web/agui?long-run=1`（兼容 `?detach=1`）。存储职责 → [持久化](../../01-foundations/05-persistence-and-longruns/README.md)。
 
 | | `X-Agui-Resume: none` | `history` | `live` |
 | --- | --- | --- | --- |
-| 关 tab / 闪退 / 断网 | 连接死了，跑也停 | 后台继续；回来只能看到已写入的帧 | 后台继续；`GET /runs/{id}/attach?after=` 接到句中 |
-| Stop | abort 这条 HTTP | abort 连接 + `POST /runs/{id}/abort` | 同左 |
+| 关 tab / 闪退 / 断网 | 连接死了，跑也停 | 后台继续；回来只能看到已写入的帧 | 后台继续；`GET /api/v1/runs/{id}/attach?after=` 接到句中 |
+| Stop | abort 这条 HTTP | abort 连接 + `POST /api/v1/runs/{id}/abort` | 同左 |
 | 刷新 | 只能看已落盘 | `/frames` 到已写入点 | `/frames` + attach `?after=` |
-| 路由 | 无 `/runs/*` | 有 | 有 |
+| 路由 | 无 `/api/v1/runs/*` | 有 | 有 |
 
-关 tab 和闪退 **都不是停任务**。`POST /runs/{id}/abort` 只对应 Stop。`AbortController.abort()` 停的是连接；`LongRunManager.abort()` 停的是 run。
+关 tab 和闪退 **都不是停任务**。`POST /api/v1/runs/{id}/abort` 只对应 Stop。`AbortController.abort()` 停的是连接；`LongRunManager.abort()` 停的是 run。
 
 ## 1. 请叫 attach，不要叫 stream
 
-Canonical：`GET /runs/{runId}/attach?after=`
+Canonical：`GET /api/v1/runs/{runId}/attach?after=`
 
 | 名字 | 含义 | 前端怎么用 |
 | --- | --- | --- |
 | **attach** | 挂回 in-flight / 刚结束的 run，按 SSE 续写 | **唯一要用的路径** |
-| `/runs/{id}/stream` | deprecated，与 `/attach` 等价 | 勿写新代码 |
-| `/threads/{id}/frames` | 回放已存展示帧 | 打开/刷新灌历史；**不能**当 live |
-| `/threads/{id}/messages` | Agno session（lossy） | **不要**当 UI transcript |
+| `/api/v1/runs/{id}/stream` | deprecated，与 `/attach` 等价 | 勿写新代码 |
+| `/api/v1/threads/{id}/frames` | 回放已存展示帧 | 打开/刷新灌历史；**不能**当 live |
+| `/api/v1/threads/{id}/messages` | Agno session（lossy） | **不要**当 UI transcript |
 
 两种 cursor **禁止混用**：
 
 | Cursor | 形状 | 只能给 |
 | --- | --- | --- |
-| attach / SSE `id:` | 单 run log offset（如 `000000000012`） | `GET /runs/{id}/attach?after=` 或 `Last-Event-ID` |
-| frames | `{runId}:{paddedOffset}` | `GET /threads/{id}/frames?after=` |
+| attach / SSE `id:` | 单 run log offset（如 `000000000012`） | `GET /api/v1/runs/{id}/attach?after=` 或 `Last-Event-ID` |
+| frames | `{runId}:{paddedOffset}` | `GET /api/v1/threads/{id}/frames?after=` |
 
 ## 2. 产品必须照做
 
@@ -48,7 +48,7 @@ type SessionCursor = {
 ### B. 发送
 
 ```ts
-await postSse(`${API}/agui?long-run=1`, runAgentInput, {
+await postSse(`${API}/api/v1/channels/web/agui?long-run=1`, runAgentInput, {
   signal: abortController.signal,
   onFrame: (frame) => {
     if (frame.id) lastEventId = frame.id;
@@ -68,14 +68,14 @@ await postSse(`${API}/agui?long-run=1`, runAgentInput, {
 1. 任意网络字节（含只有 `:` 的 comment）→ 重置 idle。
 2. 观察到心跳后，idle ≈ **3× 心跳**（约 6–30s；没观察到心跳时退回 ~15s）。
 3. 超时 → 可识别的 `AbortError`（如 `cause: "sse-idle"`），**不要**当成用户 Stop。
-4. 若 `resumeMode !== "none"` 且非 Stop → 立刻 `GET /runs/${runId}/attach?after=${lastEventId}`，同一 reducer。
+4. 若 `resumeMode !== "none"` 且非 Stop → 立刻 `GET /api/v1/runs/${runId}/attach?after=${lastEventId}`，同一 reducer。
 
 Stop：
 
 ```ts
 stopping = true;
 abortController.abort();
-await fetch(`${API}/runs/${runId}/abort`, { method: "POST" });
+await fetch(`${API}/api/v1/runs/${runId}/abort`, { method: "POST" });
 ```
 
 **错法：** 把「没 AG-UI 事件」当死连接；idle 时 abort run；用 `/frames` 的 id 去 attach。
@@ -85,10 +85,10 @@ await fetch(`${API}/runs/${runId}/abort`, { method: "POST" });
 ```text
 1. 读 resumeMode
 2. 读 localStorage session
-3. GET /threads/{threadId}/frames
+3. GET /api/v1/threads/{threadId}/frames
 4. 同一 applyEvent 灌进 transcript
-5. GET /threads/{threadId}/active
-6. 若 running：GET /runs/{runId}/attach?after={lastEventId}
+5. GET /api/v1/threads/{threadId}/active
+6. 若 running：GET /api/v1/runs/{runId}/attach?after={lastEventId}
 7. attach 前把 currentId 设回 assistant-${runId}
 ```
 
@@ -107,7 +107,7 @@ flowchart TD
 
 ### E. 侧栏合并
 
-`GET /threads` 的 `runCount` 给人说话次数；忽略 `messageCount`。当前 active thread 尚未落盘时，本地乐观置顶（见 [02](02-thread-shell.md)）。
+`GET /api/v1/threads` 的 `runCount` 给人说话次数；忽略 `messageCount`。当前 active thread 尚未落盘时，本地乐观置顶（见 [02](02-thread-shell.md)）。
 
 ### F. 自检清单
 

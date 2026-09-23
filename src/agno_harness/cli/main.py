@@ -5,8 +5,10 @@ import typer
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 
+from ..api_paths import HEALTH_PATH
 from ..config import RelayConfig
 from ..helpers.lark import interactive_lark_onboarding
 from ..helpers.scaffold import CHANNELS, copy_project
@@ -17,8 +19,9 @@ from ..helpers.teams import (
     format_link,
     inspect_teams_config,
     interactive_teams_onboarding,
+    print_url,
     probe_health,
-    probe_teams_token,
+    split_link,
     teams_cli_executable,
 )
 
@@ -67,7 +70,7 @@ def teams_onboard_cmd(
     endpoint: str = typer.Option(
         "",
         "--endpoint",
-        help="Public messaging URL, for example https://host/api/messages",
+        help="Public messaging URL, for example https://host/api/v1/channels/teams/messages",
     ),
     project: str = typer.Option(
         "",
@@ -88,6 +91,22 @@ def teams_onboard_cmd(
     except TeamsOnboardError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
+
+
+def _labeled_rows(rows: list[tuple[str, str]]) -> str:
+    width = max(len(label) for label, _ in rows)
+    return "\n".join(f"- {label:<{width}}  {value}" for label, value in rows)
+
+
+def _url_row(label: str, url: str, *, style: str) -> str:
+    """Put a long URL under its label so the pane does not clip the query."""
+    text = format_link(url)
+    if not text:
+        return f"- {label:<10}  [red]missing[/red]"
+    limit = max(48, console.width - 4)
+    chunks = split_link(text, limit)
+    body = "\n".join(f"  [{style} link={text}]{chunk}[/]" for chunk in chunks)
+    return f"- {label}\n{body}"
 
 
 def _relay_path(public_base: str, prefix: str, path: str) -> str:
@@ -119,99 +138,86 @@ def teams_doctor_cmd(
     public = base_url or "https://<your-domain>"
     report = inspect_teams_config(public_base=public, prefix=prefix)
 
-    table = Table(title="Teams doctor")
-    table.add_column("Check")
-    table.add_column("Result")
-    app_status = "[green]set[/green]" if report.app_id else "[red]missing[/red]"
-    secret_status = "[green]set[/green]" if report.password_set else "[red]missing[/red]"
-    tenant_label = report.tenant_id or "(empty — multi-tenant botframework.com)"
-    table.add_row("App ID", f"{app_status} {report.app_id}")
-    table.add_row("Password", secret_status)
-    table.add_row("Tenant", tenant_label)
-    table.add_row("Token authority", report.authority or "[red]invalid[/red]")
-    console.print(table)
+    # The pane is often narrower than the width the terminal reports. A rule or
+    # URL drawn at the reported width runs off the right edge.
+    console.width = min(console.width, 92)
 
-    if report.problems:
+    console.print()
+    console.print(Rule("Teams CLI State", style="white", align="left"))
+
+    registration = None
+    if not report.problems:
+        registration = fetch_teams_app_registration(report.app_id)
+
+    callback_label = "[red]missing[/red]"
+    callback_extra: list[str] = []
+    if registration is None:
+        callback_label = "[yellow]skipped[/yellow]"
+    elif registration.lookup_error:
+        callback_label = f"[yellow]{registration.lookup_error}[/yellow]"
+    elif registration.callback_configured:
+        callback_label = _url_row("Callback", registration.callback_url, style="green")
+    else:
+        report.problems.append("messaging callback is not configured")
+        callback_label = "[red]Not configured[/red]"
+        callback_extra = [
+            "1. Expose port 8000: [cyan]ngrok http 8000[/cyan]",
+            f"2. Set the callback: [cyan]{callback_setup_command(report.app_id)}[/cyan]",
+            f"Local route: [cyan]{report.messaging_endpoint}[/cyan]",
+        ]
+
+    secret_status = (
+        f"[green]{report.password_hint}[/green]" if report.password_hint else "[red]missing[/red]"
+    )
+    agent_lines = _labeled_rows(
+        [
+            ("App ID", report.app_id or "[red]missing[/red]"),
+            ("Password", secret_status),
+            ("Tenant", report.tenant_id or "(empty — multi-tenant)"),
+        ]
+    )
+    if callback_label.startswith("- "):
+        agent_lines = f"{agent_lines}\n{callback_label}"
+    else:
+        agent_lines = f"{agent_lines}\n" + _labeled_rows([("Callback", callback_label)])
+    if callback_extra:
+        agent_lines = f"{agent_lines}\n" + "\n".join(callback_extra)
+    print_url(console, "Agent State", agent_lines, border_style="cyan")
+
+    if report.problems and registration is None:
         for problem in report.problems:
             console.print(f"[red]{problem}[/red]")
         raise typer.Exit(code=1)
 
-    registration = fetch_teams_app_registration(report.app_id)
-    if registration.lookup_error:
-        console.print(
-            Panel(
-                registration.lookup_error,
-                title="Install link and callback",
-                border_style="yellow",
-            )
+    link_rows: list[str] = []
+    if registration is not None and not registration.lookup_error:
+        link_rows.append(_url_row("Install", registration.install_url, style="cyan"))
+        link_rows.append(_url_row("Portal", registration.portal_url, style="blue"))
+    if link_rows:
+        print_url(
+            console,
+            "Developer Portal & Install URL",
+            "\n".join(link_rows),
+            border_style="blue",
         )
-    else:
-        console.print(
-            Panel(
-                format_link(registration.install_url or "(missing)"),
-                title="Install",
-                border_style="cyan",
-            )
+    elif registration is not None and registration.lookup_error:
+        print_url(
+            console,
+            "Developer Portal & Install URL",
+            registration.lookup_error,
+            border_style="yellow",
         )
-        if registration.portal_url:
-            console.print(
-                Panel(
-                    format_link(registration.portal_url),
-                    title="Developer Portal",
-                    border_style="cyan",
-                )
-            )
-        if registration.callback_configured:
-            console.print(
-                Panel(
-                    f"[green]Configured[/green]\n{format_link(registration.callback_url)}",
-                    title="Callback",
-                    border_style="green",
-                )
-            )
-        else:
-            report.problems.append("messaging callback is not configured")
-            console.print(
-                Panel(
-                    "\n".join(
-                        [
-                            "[red]Not configured.[/red]",
-                            "",
-                            "Teams cannot deliver messages until the bot has a public HTTPS endpoint.",
-                            "1. Expose port 8000:",
-                            "   [cyan]ngrok http 8000[/cyan]",
-                            "2. Set the callback to that tunnel:",
-                            f"   [cyan]{callback_setup_command(report.app_id)}[/cyan]",
-                            "",
-                            f"Local route: [cyan]{report.messaging_endpoint}[/cyan]",
-                        ]
-                    ),
-                    title="Callback",
-                    border_style="red",
-                )
-            )
-
-    token_ok, token_detail = asyncio.run(
-        probe_teams_token(report.app_id, RelayConfig.teams_app_password(), report.tenant_id)
-    )
-    report.token_ok = token_ok
-    report.token_detail = token_detail
-    token_style = "green" if token_ok else "red"
-    console.print(f"[{token_style}]{token_detail}[/{token_style}]")
 
     if base_url:
-        health_url = _relay_path(base_url, prefix, "/health")
+        health_url = _relay_path(base_url, prefix, HEALTH_PATH)
         health_ok, health_detail = asyncio.run(probe_health(health_url))
         report.health_ok = health_ok
         report.health_detail = health_detail
-        health_style = "green" if health_ok else "red"
-        console.print(f"[{health_style}]{health_detail} {health_url}[/{health_style}]")
-    else:
-        console.print(
-            "[yellow]Health check skipped. Pass --base-url to probe GET /health.[/yellow]"
-        )
+        if health_ok:
+            console.print(f"[green]Server is up:[/green] {health_url}")
+        else:
+            console.print(f"[red]{health_detail}[/red] {health_url}")
 
-    console.print(f"Local messaging path: [cyan]{report.messaging_endpoint}[/cyan]")
     raise typer.Exit(code=0 if report.ok else 1)
 
 
@@ -247,10 +253,10 @@ def init_project(
             "Missing Teams or Lark settings log an error and the process stops."
         ),
         "cli": "The terminal calls cli.mount. FastAPI is not started.",
-        "web": "AG-UI is [cyan]POST /agui[/cyan].",
+        "web": "AG-UI is [cyan]POST /api/v1/channels/web/agui[/cyan].",
         "teams": (
             "mount_all calls web and teams. "
-            "Teams endpoint is [cyan]POST /api/messages[/cyan]. "
+            "Teams endpoint is [cyan]POST /api/v1/channels/teams/messages[/cyan]. "
             "Check it with [cyan]agno-harness teams doctor[/cyan]."
         ),
         "lark": "mount_all calls lark. Missing app id or secret logs an error and the process stops.",

@@ -21,7 +21,7 @@ app.include_router(relay.get_router(allow_anonymous=True))
 
 `RelayApp` takes an `AgentRuntime`, not a raw agent. The tenant parameter is `tenant_id` (`bot_tenant_id` is accepted as an alias).
 
-The webhook is `POST /api/messages`. A router prefix is prepended, so `prefix="/agent"` makes the Azure Messaging endpoint `POST /agent/api/messages`. There is no `/agent/teams/messages` route.
+The webhook is `POST /api/v1/channels/teams/messages`. A router prefix is prepended, so `prefix="/agent"` makes the Azure Messaging endpoint `POST /agent/api/v1/channels/teams/messages`.
 
 `agno-harness teams doctor` prints that endpoint, checks the env, and requests a connector token.
 

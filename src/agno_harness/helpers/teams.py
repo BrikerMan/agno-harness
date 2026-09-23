@@ -20,8 +20,10 @@ from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.rule import Rule
+from rich.text import Text
 
-from ..channels.teams import teams_messaging_endpoint
+from ..channels.teams import TEAMS_MESSAGES_PATH, teams_messaging_endpoint
 from ..channels.teams_connector import (
     TeamsChannelError,
     TeamsConnectorClient,
@@ -93,15 +95,22 @@ def teams_cli_executable() -> str | None:
 
 
 def normalize_messaging_endpoint(value: str) -> str:
-    """Accept a public origin or a full messaging URL and return ``https://host/api/messages``."""
+    """Accept a public origin or a full messaging URL.
+
+    Returns ``https://host/api/v1/channels/teams/messages``. A trailing
+    ``/api/messages`` from the previous default is rewritten to that path.
+    """
     text = value.strip().rstrip("/")
     if not text:
         return ""
     if not text.startswith("https://"):
         raise TeamsOnboardError("Messaging endpoint must be an https URL")
-    if text.endswith("/api/messages"):
+    if text.endswith(TEAMS_MESSAGES_PATH):
         return text
-    return f"{text}/api/messages"
+    legacy = "/api/messages"
+    if text.endswith(legacy):
+        text = text[: -len(legacy)]
+    return f"{text}{TEAMS_MESSAGES_PATH}"
 
 
 def install_url_for(teams_app_id: str, install_link: str = "") -> str:
@@ -257,25 +266,104 @@ def scaffold_teams_project(project_dir: str, keys: dict[str, str] | None = None)
     return target
 
 
+def mask_secret(value: str, *, head: int = 3, tail: int = 3) -> str:
+    """Show the ends of a secret and hide the middle, like ``not*******xyz``.
+
+    A value too short to keep both ends hidden is starred instead of printed.
+    """
+    text = value.strip()
+    if not text:
+        return ""
+    if len(text) <= head + tail:
+        if len(text) <= 2:
+            return "*" * len(text)
+        return f"{text[0]}{'*' * 7}{text[-1]}"
+    return f"{text[:head]}{'*' * 7}{text[-tail:]}"
+
+
 def format_link(url: str) -> str:
-    """Break a long Teams URL before the query so the id is not split mid-token."""
-    if "?" not in url:
-        return url
-    path, query = url.split("?", 1)
-    return f"{path}\n?{query}"
+    """Return one copyable URL.
+
+    A newline before ``?`` is not part of the URL. Copying that break makes the
+    install link fail, so whitespace is removed instead of inserted.
+    """
+    return "".join(url.split())
+
+
+def split_link(url: str, width: int) -> list[str]:
+    """Break a URL into visible pieces that join back into the same URL.
+
+    The terminal often reports a wider size than the pane actually shows, so a
+    single line is clipped. Pieces break at ``?`` and ``&`` instead of mid-token.
+    """
+    text = format_link(url)
+    if not text:
+        return []
+    limit = max(width, 16)
+    if len(text) <= limit:
+        return [text]
+    pieces: list[str] = []
+    if "?" in text:
+        head, query = text.split("?", 1)
+        pieces.append(head)
+        for index, part in enumerate(query.split("&")):
+            pieces.append(("?" if index == 0 else "&") + part)
+    else:
+        pieces.append(text)
+    lines: list[str] = []
+    for piece in pieces:
+        while len(piece) > limit:
+            lines.append(piece[:limit])
+            piece = piece[limit:]
+        if piece:
+            lines.append(piece)
+    return lines
 
 
 def callback_setup_command(app_id: str) -> str:
     """Teams CLI command that sets the bot messaging callback."""
-    return f"teams app update {app_id} --endpoint https://<tunnel-host>/api/messages"
+    return f"teams app update {app_id} --endpoint https://<tunnel-host>{TEAMS_MESSAGES_PATH}"
+
+
+def print_url(
+    console: Console,
+    title: str,
+    body: str,
+    *,
+    border_style: str = "cyan",
+    summary: str = "",
+) -> None:
+    """Print one labeled region: a rule, one or two lines of what it is, then the value.
+
+    No panel. A box wraps to the terminal width and splits a URL in the middle.
+    """
+    console.print()
+    console.print(Rule(title, style=border_style, align="left"))
+    if summary:
+        console.print(f"[dim]{summary}[/dim]")
+    for line in body.splitlines():
+        rendered = Text.from_markup(line)
+        rendered.no_wrap = True
+        rendered.overflow = "ignore"
+        width = max(console.width, len(rendered.plain) + 1)
+        out = console
+        if console.width < width:
+            out = Console(
+                width=width,
+                file=console.file,
+                force_terminal=console.is_terminal,
+                color_system=console.color_system,
+                legacy_windows=False,
+            )
+        out.print(rendered, overflow="ignore", no_wrap=True, crop=False)
 
 
 def _print_url(label: str, url: str) -> None:
-    _console.print(Panel(format_link(url), title=label, border_style="cyan"))
+    print_url(_console, label, format_link(url), border_style="cyan")
 
 
 def _print_cli_recipe(name: str, endpoint: str) -> None:
-    endpoint_arg = endpoint or "https://<tunnel-host>/api/messages"
+    endpoint_arg = endpoint or f"https://<tunnel-host>{TEAMS_MESSAGES_PATH}"
     _console.print(
         "\nTeams has no QR code. The Developer CLI prints an install URL.\n"
         f"  npm install -g {TEAMS_CLI_PACKAGE}\n"
@@ -496,6 +584,7 @@ class TeamsDoctorReport:
 
     app_id: str
     password_set: bool
+    password_hint: str
     tenant_id: str | None
     authority: str
     messaging_endpoint: str
@@ -532,6 +621,7 @@ def inspect_teams_config(
     return TeamsDoctorReport(
         app_id=app_id,
         password_set=bool(password),
+        password_hint=mask_secret(password),
         tenant_id=tenant,
         authority=authority,
         messaging_endpoint=teams_messaging_endpoint(public_base, prefix),

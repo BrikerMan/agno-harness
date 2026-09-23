@@ -8,6 +8,6 @@ Tools return short structured data and call app.services.
 Card classes live under cards/. Channel code lives under app/channels/.
 """
 
-from app.agents.main.tools.clock import ClockTools
+from app.agents.main.tools.background_task import toolkit as background_task
 
-TOOLS = [ClockTools()]
+TOOLS = [background_task]

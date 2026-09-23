@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from ag_ui.core import CustomEvent, TextMessageContentEvent
 
+from agno_harness.cards import teams_event_card
 from agno_harness.core.channel import ConversationKey
 from agno_harness.core.streamui.schema import BlockSchema, CardCatalog, ItemSchema
 from agno_harness.sessions.manager import InMemorySessionStore, SessionManager
@@ -150,6 +151,83 @@ async def test_message_collector_aggregates_items_into_single_card():
     assert card["body"][0]["text"] == "Top Sci-Fi"
     assert card["body"][1] == {"type": "TextBlock", "text": "Teams: Inception"}
     assert card["body"][2] == {"type": "TextBlock", "text": "Teams: Interstellar"}
+
+
+class NoteBlock(BlockSchema):
+    schema_name = "note"
+    body = "text"
+
+
+@pytest.mark.asyncio
+async def test_text_body_lands_inside_the_teams_card():
+    catalog = CardCatalog([NoteBlock])
+    collector = MessageCollector(platform="teams", catalog=catalog)
+    collector.feed(
+        CustomEvent(name="ui.block.start", value={"name": "note", "props": {"title": "记录"}})
+    )
+    collector.feed(CustomEvent(name="ui.text", value={"delta": "您在格鲁吉亚出差。"}))
+    collector.feed(CustomEvent(name="ui.block.end", value={"name": "note"}))
+
+    card = collector.finalize().cards[0]
+    assert card["type"] == "AdaptiveCard"
+    texts = [block.get("text") for block in card["body"] if isinstance(block, dict)]
+    assert "您在格鲁吉亚出差。" in texts
+
+
+class StyledNote(BlockSchema):
+    """A short prose note."""
+
+    schema_name = "note"
+    body = "text"
+    teams_container_style = "emphasis"
+
+
+class StyledCode(BlockSchema):
+    """A source snippet."""
+
+    schema_name = "code"
+    body = "text"
+    teams_container_style = "emphasis"
+    teams_code_block = True
+
+
+class StyledEvent(BlockSchema):
+    """A time and what happened."""
+
+    schema_name = "event"
+    body = "text"
+
+    def render_teams_block(self, rendered_items: list) -> dict:
+        from agno_harness.cards import fragment_text
+
+        return teams_event_card(fragment_text(rendered_items))
+
+
+def _feed_text(collector: MessageCollector, name: str, text: str) -> dict:
+    collector.feed(CustomEvent(name="ui.block.start", value={"name": name, "props": {}}))
+    collector.feed(CustomEvent(name="ui.text", value={"delta": text}))
+    collector.feed(CustomEvent(name="ui.block.end", value={"name": name}))
+    return collector.finalize().cards[-1]
+
+
+def test_note_code_and_event_cards_render_differently():
+    catalog = CardCatalog([StyledNote, StyledCode, StyledEvent])
+    collector = MessageCollector(platform="teams", catalog=catalog)
+    note = _feed_text(collector, "note", "A plain note.")
+    code = _feed_text(collector, "code", 'print("Hello, World!")')
+    event = _feed_text(collector, "event", "Time: 2026-09-22 11:22\nEvent: Card check")
+
+    note_container = note["body"][0]
+    code_container = code["body"][0]
+    assert note_container["type"] == "Container"
+    assert note_container["style"] == "emphasis"
+    assert note_container["items"][1]["type"] == "TextBlock"
+    assert code_container["items"][1]["type"] == "CodeBlock"
+    assert code_container["items"][1]["codeSnippet"] == 'print("Hello, World!")'
+    facts = event["body"][0]["items"][1]
+    assert facts["type"] == "FactSet"
+    assert facts["facts"][0] == {"title": "Time", "value": "2026-09-22 11:22"}
+    assert facts["facts"][1] == {"title": "Event", "value": "Card check"}
 
 
 @pytest.mark.asyncio

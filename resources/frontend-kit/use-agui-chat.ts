@@ -108,7 +108,7 @@ export interface UseAguiChatOptions {
   storageKey?: string;
   /** Identity and extra headers on every request. */
   getHeaders?: () => Record<string, string>;
-  /** Append a `debug.summary` frame (`POST /agui?debug=1`). */
+  /** Append a `debug.summary` frame (`POST /api/v1/channels/web/agui?debug=1`). */
   debug?: boolean;
 }
 
@@ -140,7 +140,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
   const [lastRequest, setLastRequest] = useState<unknown>(null);
   const [isStreaming, setStreaming] = useState(false);
   const [isReconnecting, setReconnecting] = useState(false);
-  /** `null` until `/health` answers — `"none"` would skip restore attach. */
+  /** `null` until `/api/v1/health` answers — `"none"` would skip restore attach. */
   const [resumeMode, setResumeMode] = useState<ResumeMode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState(() => loadSession(storageKey)?.threadId ?? newId("thread"));
@@ -261,7 +261,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
       const query = params.toString();
 
       try {
-        await postSse(`${apiBase}/agui${query ? `?${query}` : ""}`, payload, {
+        await postSse(`${apiBase}/api/v1/channels/web/agui${query ? `?${query}` : ""}`, payload, {
           signal: controller.signal,
           headers: headersRef.current(),
           onResponse: (response) => setResumeMode(readResumeMode(response)),
@@ -332,7 +332,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
           const after = lastEventIdRef.current;
           try {
             await getSse(
-              `${apiBase}/runs/${runId}/attach${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+              `${apiBase}/api/v1/runs/${runId}/attach${after ? `?after=${encodeURIComponent(after)}` : ""}`,
               {
                 signal: controller.signal,
                 headers: headersRef.current(),
@@ -381,7 +381,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
     setStreaming(false);
     setReconnecting(false);
     if (runId && resumeMode && resumeMode !== "none") {
-      void request(`/runs/${runId}/abort`, { method: "POST" }).catch(() => {});
+      void request(`/api/v1/runs/${runId}/abort`, { method: "POST" }).catch(() => {});
     }
   }, [request, resumeMode]);
 
@@ -420,7 +420,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
   // buttons and banners that depend on it are wrong until this answers, so it
   // is read from health rather than waiting for the first run's headers.
   useEffect(() => {
-    void request(`/health`)
+    void request(`/api/v1/health`)
       .then((response) => response.json())
       .then((data) => setResumeMode(normalizeResume(data.resumeMode)))
       .catch(() => setResumeMode("none"));
@@ -439,7 +439,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
       if (history) setState(history);
       if (resumeMode === "none") return;
 
-      const active = (await request(`/threads/${session.threadId}/active`)
+      const active = (await request(`/api/v1/threads/${session.threadId}/active`)
         .then((response) => (response.ok ? response.json() : []))
         .catch(() => [])) as Array<{ runId: string; status?: string; input?: string }>;
       const live = active.find((record) => record.status === "running");
@@ -484,7 +484,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
       };
       try {
         await getSse(
-          `${apiBase}/runs/${runId}/attach${after ? `?after=${encodeURIComponent(after)}` : ""}`,
+          `${apiBase}/api/v1/runs/${runId}/attach${after ? `?after=${encodeURIComponent(after)}` : ""}`,
           {
             headers: headersRef.current(),
             onFrame: (frame) => deliver(frame, sink, setError),
@@ -569,7 +569,7 @@ export function useAguiChat(options: UseAguiChatOptions = {}): UseAguiChat {
  * both of those are empty.
  */
 async function readThread(threadId: string, request: FetchFn): Promise<ChatState> {
-  const response = await request(`/threads/${threadId}/frames`);
+  const response = await request(`/api/v1/threads/${threadId}/frames`);
   if (response.ok) {
     const { frames } = (await response.json()) as {
       frames: Array<{ id: string; event: AguiEvent }>;
@@ -595,7 +595,7 @@ async function readThread(threadId: string, request: FetchFn): Promise<ChatState
     throw new Error(`HTTP ${response.status}`);
   }
 
-  const fallback = await request(`/threads/${threadId}/messages`);
+  const fallback = await request(`/api/v1/threads/${threadId}/messages`);
   if (!fallback.ok) throw new Error(`HTTP ${fallback.status}`);
   const raw = (await fallback.json()) as Array<Record<string, unknown>>;
   return { ...EMPTY_STATE, messages: raw.map(fromReplayMessage) };
@@ -610,7 +610,7 @@ async function readThread(threadId: string, request: FetchFn): Promise<ChatState
  * their original streamed shape, and the questions from the session.
  */
 async function readSessionMessages(threadId: string, request: FetchFn): Promise<ChatMessage[]> {
-  const response = await request(`/threads/${threadId}/messages`);
+  const response = await request(`/api/v1/threads/${threadId}/messages`);
   if (!response.ok) return [];
   const raw = (await response.json()) as Array<Record<string, unknown>>;
   return raw.map(fromReplayMessage);
@@ -622,7 +622,7 @@ async function resolvePendingAgainstActive(
   state: ChatState,
 ): Promise<ChatState> {
   if (state.pendingTools.length === 0) return state;
-  const active = (await request(`/threads/${threadId}/active`)
+  const active = (await request(`/api/v1/threads/${threadId}/active`)
     .then((response) => (response.ok ? response.json() : []))
     .catch(() => [])) as Array<{ status?: string }>;
   return active.some((record) => record.status === "paused") ? state : settleAnsweredPause(state);

@@ -6,7 +6,7 @@ The tap sits between the bridge and the encoder and records all of that without
 altering a single frame — whatever the client would have received, it still
 receives, in the same order.
 
-Enabled per request (``POST /agui?debug=1``) so production streams pay nothing.
+Enabled per request (``POST /api/v1/channels/web/agui?debug=1``) so production streams pay nothing.
 """
 
 from __future__ import annotations

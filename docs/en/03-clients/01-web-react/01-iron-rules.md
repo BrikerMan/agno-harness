@@ -6,11 +6,11 @@ The runnable protocol layer is [`frontend-kit/`](../../../../resources/frontend-
 
 ## The five
 
-1. **One `applyEvent` for live and replay.** Do not rebuild from Agno `GET /threads/{id}/messages` and regroup yourself.
+1. **One `applyEvent` for live and replay.** Do not rebuild from Agno `GET /api/v1/threads/{id}/messages` and regroup yourself.
 2. **Render only `body.order[]`.** Push a slot when the element **opens**. Tools appearing under markdown means the client reordered — not a runtime bug.
 3. **History is `/frames`, not `/messages`.** `/messages` is the lossy session for the model.
 4. **Unpin only when the user scrolls up.** A `scrollTop` change caused by growing content is not an unpin.
-5. **Stop ≠ disconnect.** Closing a tab / crash / network drop is just looking away. `POST /runs/{id}/abort` is only for Stop (or an explicit “drop this job”).
+5. **Stop ≠ disconnect.** Closing a tab / crash / network drop is just looking away. `POST /api/v1/runs/{id}/abort` is only for Stop (or an explicit “drop this job”).
 
 ## Contrast
 

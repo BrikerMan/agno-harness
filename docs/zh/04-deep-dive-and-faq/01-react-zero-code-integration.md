@@ -12,7 +12,7 @@
 
 `agno-harness` 内部的核心执行引擎 `AgentRuntime` 严格遵守标准 AG-UI 传输协议规范：
 
-- **端点路径完全一致**：`POST /agui/runs`（或挂载自定义前缀）；
+- **端点路径完全一致**：`POST /api/v1/channels/web/agui/runs`（或挂载自定义前缀）；
 - **请求格式完全一致**：标准 `RunAgentInput`（包含 `thread_id`, `run_id`, `messages`, `state`, `context`）；
 - **SSE 事件帧格式完全一致**：标准事件流（`event: run_started`, `event: text_message_content`, `event: custom`, `event: run_finished`）；
 - **心跳保活完全兼容**：默认以 5 秒间隔下发 `: ping\n\n` 注释帧，ALB / Nginx 反向代理绝不断连。
@@ -41,7 +41,7 @@
 }
 ```
 **前端响应范式**：
-在收到 `name === "run.paused"` 时弹窗或展示审批卡片；当用户点击“同意”后，前端向 `/agui/runs` 再次发起请求，带上 Resume 载荷即可无缝唤醒智能体：
+在收到 `name === "run.paused"` 时弹窗或展示审批卡片；当用户点击“同意”后，前端向 `/api/v1/channels/web/agui/runs` 再次发起请求，带上 Resume 载荷即可无缝唤醒智能体：
 ```typescript
 const resumePayload = {
   thread_id: currentThreadId,
@@ -88,7 +88,7 @@ Web 前端监听该事件即可自动关闭等待中的审批模态框，并变�
 
 ### 引入方式
 ```tsx
-import { DebugPanel } from './agui-devtools/DebugPanel';
+import { DebugPanel } from './api/v1/channels/web/agui-devtools/DebugPanel';
 
 function App() {
   return (

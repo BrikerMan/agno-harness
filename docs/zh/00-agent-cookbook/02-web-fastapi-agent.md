@@ -42,7 +42,7 @@ sequenceDiagram
     participant Runtime as AgentRuntime
     participant LLM as Agno Agent
 
-    Browser->>Router: POST /agent/agui (登录身份)
+    Browser->>Router: POST /agent/api/v1/channels/web/agui (登录身份)
     Router-->>Browser: 200 text/event-stream
     loop 约每 5 秒
         Runtime-->>Browser: : ping
@@ -53,7 +53,7 @@ sequenceDiagram
     Runtime-->>Browser: run_finished
 ```
 
-挂上之后有：`POST /agent/agui`、`GET /agent/threads`、`GET /agent/threads/{id}/frames`（配了存储才有）。长任务 `/attach` 见 [Web 04](../03-clients/01-web-react/04-attach-and-longrun.md)。
+挂上之后有：`POST /agent/api/v1/channels/web/agui`、`GET /agent/api/v1/threads`、`GET /agent/api/v1/threads/{id}/frames`（配了存储才有）。长任务 `/attach` 见 [Web 04](../03-clients/01-web-react/04-attach-and-longrun.md)。
 
 身份从登录读（cookie / session / `request.state`），不要从 JSON 里读 `userId`。找不到或不是你的 thread 一律 `404`。详见 [02 FastAPI](../01-foundations/02-fastapi-integration.md)。
 
@@ -113,7 +113,7 @@ async def index():
           const text = document.getElementById('q').value;
           const log = document.getElementById('log');
           log.textContent += "\\n\\n你: " + text + "\\n助手: ";
-          const resp = await fetch('/agent/agui', {
+          const resp = await fetch('/agent/api/v1/channels/web/agui', {
             method: 'POST',
             headers: {'Content-Type':'application/json','X-User-Id':'local-dev'},
             body: JSON.stringify({

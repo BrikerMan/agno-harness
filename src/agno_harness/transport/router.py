@@ -7,27 +7,27 @@ the debug endpoints the frontend inspector reads::
 
 Routes
 ------
-``POST   /agui``                       run the agent, stream AG-UI SSE
-``GET    /health``                     ``{status, resumeMode}`` when ``include_health=True``
-``GET    /threads``                    list threads, newest first
-``GET    /threads/{id}/messages``      replay a thread
-``GET    /threads/{id}/frames?after=`` replay a thread as stored frames
-``DELETE /threads/{id}``               delete a thread
-``GET    /debug/chunks``               recorded raw Agno chunk shapes
-``GET    /debug/state/{run_id}``       translator state after a run
-``GET    /debug/violations``           protocol repairs from the last run
-``GET    /debug/runs/{run_id}``        everything recorded about one run
+``POST   /api/v1/channels/web/agui``          run the agent, stream AG-UI SSE
+``GET    /api/v1/health``                     ``{status, resumeMode}`` when ``include_health=True``
+``GET    /api/v1/threads``                    list threads, newest first
+``GET    /api/v1/threads/{id}/messages``      replay a thread
+``GET    /api/v1/threads/{id}/frames?after=`` replay a thread as stored frames
+``DELETE /api/v1/threads/{id}``               delete a thread
+``GET    /api/v1/debug/chunks``               recorded raw Agno chunk shapes
+``GET    /api/v1/debug/state/{run_id}``       translator state after a run
+``GET    /api/v1/debug/violations``           protocol repairs from the last run
+``GET    /api/v1/debug/runs/{run_id}``        everything recorded about one run
 
 With a :class:`LongRunManager` passed in, four more, for runs that survive the
 connection that started them:
 
-``POST   /agui?long-run=1``            start detached, then attach from the log
-``GET    /runs/{id}/attach?after=``    (re)attach to a run (canonical)
-``GET    /runs/{id}/stream?after=``    **deprecated** alias of ``/attach``
-``GET    /threads/{id}/active``        runs still going or awaiting a human
-``POST   /runs/{id}/abort``            stop a run on purpose
+``POST   /api/v1/channels/web/agui?long-run=1``  start detached, then attach from the log
+``GET    /api/v1/runs/{id}/attach?after=``       (re)attach to a run (canonical)
+``GET    /api/v1/runs/{id}/stream?after=``       **deprecated** alias of ``/attach``
+``GET    /api/v1/threads/{id}/active``           runs still going or awaiting a human
+``POST   /api/v1/runs/{id}/abort``               stop a run on purpose
 
-Pass ``?debug=1`` to ``/agui`` to append a ``debug.summary`` frame with timing,
+Pass ``?debug=1`` to ``/api/v1/channels/web/agui`` to append a ``debug.summary`` frame with timing,
 per-type frame counts and any protocol repairs.
 """
 
@@ -46,6 +46,8 @@ from ag_ui.encoder import EventEncoder
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from ..api_paths import DEBUG_PATH, HEALTH_PATH, RUNS_PATH, THREADS_PATH
+from ..channels.web import WEB_AGUI_PATH
 from ..core.debug import DebugTap
 from ..core.log import Frame
 from ..core.protocol import WIRE_PROTOCOL_VERSION
@@ -115,10 +117,10 @@ def make_agui_router(
     routes do not exist at all, rather than existing and failing — a 404 on the
     route is a much clearer signal than a 500 halfway through a stream.
 
-    ``include_health`` mounts ``GET /health`` with ``resumeMode``. The React kit
+    ``include_health`` mounts ``GET /api/v1/health`` with ``resumeMode``. The React kit
     reads that field before the first send; a missing value is treated as
     ``none`` and refresh-and-resume never attaches. Default off so a host that
-    already has ``/health`` is not doubled. ``make_relay_router`` always
+    already has ``/api/v1/health`` is not doubled. ``make_relay_router`` always
     advertises ``resumeMode`` on its own health route.
     """
     if allow_anonymous is None:
@@ -139,7 +141,7 @@ def make_agui_router(
 
     if include_health:
 
-        @router.get("/health", name="agui_health", tags=["system"])
+        @router.get(HEALTH_PATH, name="agui_health", tags=["system"])
         async def agui_health() -> dict[str, Any]:
             return {"status": "healthy", "resumeMode": resume.value}
 
@@ -165,7 +167,7 @@ def make_agui_router(
             "running in single-user mode, where every caller can read, replay and delete every thread."
         )
 
-    @router.post("/agui", name="run_agent")
+    @router.post(WEB_AGUI_PATH, name="run_agent")
     async def run_agent(
         request: Request,
         run_input: RunAgentInput,
@@ -200,18 +202,18 @@ def make_agui_router(
             headers=headers,
         )
 
-    @router.get("/threads", name="list_threads")
+    @router.get(THREADS_PATH, name="list_threads")
     async def list_threads(request: Request) -> list[dict[str, Any]]:
         return await runtime.list_threads(user_id=_user(request))
 
-    @router.get("/threads/{thread_id}/messages", name="thread_messages")
+    @router.get(f"{THREADS_PATH}/{{thread_id}}/messages", name="thread_messages")
     async def thread_messages(request: Request, thread_id: str) -> Any:
         messages = await runtime.replay_messages(thread_id, user_id=_user(request))
         if messages is None:
             return JSONResponse(status_code=404, content={"error": "thread not found"})
         return messages
 
-    @router.get("/threads/{thread_id}/frames", name="thread_frames")
+    @router.get(f"{THREADS_PATH}/{{thread_id}}/frames", name="thread_frames")
     async def thread_frames(
         request: Request,
         thread_id: str,
@@ -228,7 +230,7 @@ def make_agui_router(
             return JSONResponse(status_code=501, content={"error": str(exc)})
         return {"frames": frames}
 
-    @router.delete("/threads/{thread_id}", name="delete_thread")
+    @router.delete(f"{THREADS_PATH}/{{thread_id}}", name="delete_thread")
     async def delete_thread(request: Request, thread_id: str) -> Any:
         result = await runtime.delete_thread(thread_id, user_id=_user(request))
         if result.get("error") == "thread not found":
@@ -253,7 +255,7 @@ def make_agui_router(
                 },
             )
 
-        @router.get("/runs/{run_id}/attach", name="attach_run")
+        @router.get(f"{RUNS_PATH}/{{run_id}}/attach", name="attach_run")
         async def attach_run(
             request: Request,
             run_id: str,
@@ -263,7 +265,7 @@ def make_agui_router(
             return _attach_response(request, run_id, after)
 
         @router.get(
-            "/runs/{run_id}/stream",
+            f"{RUNS_PATH}/{{run_id}}/stream",
             name="attach_run_stream_deprecated",
             deprecated=True,
         )
@@ -272,16 +274,16 @@ def make_agui_router(
             run_id: str,
             after: str | None = Query(None, description="last offset the client holds"),
         ) -> StreamingResponse:
-            """Deprecated alias of ``GET /runs/{run_id}/attach``. Prefer ``/attach``."""
+            """Deprecated alias of ``GET /api/v1/runs/{run_id}/attach``. Prefer ``/attach``."""
             return _attach_response(request, run_id, after)
 
-        @router.get("/threads/{thread_id}/active", name="active_runs")
+        @router.get(f"{THREADS_PATH}/{{thread_id}}/active", name="active_runs")
         async def active_runs(request: Request, thread_id: str) -> list[dict[str, Any]]:
             user_id = _user(request)
             records = await long_runs.list_active(thread_id, user_id=user_id)
             return [_run_to_dict(record) for record in records]
 
-        @router.post("/runs/{run_id}/abort", name="abort_run")
+        @router.post(f"{RUNS_PATH}/{{run_id}}/abort", name="abort_run")
         async def abort_run(request: Request, run_id: str) -> Any:
             user_id = _user(request)
             try:
@@ -292,25 +294,25 @@ def make_agui_router(
 
     if expose_debug_routes:
 
-        @router.get("/debug/chunks", name="debug_chunks")
+        @router.get(f"{DEBUG_PATH}/chunks", name="debug_chunks")
         async def debug_chunks() -> dict[str, Any]:
             return runtime.chunk_samples()
 
-        @router.get("/debug/state/{run_id}", name="debug_state")
+        @router.get(f"{DEBUG_PATH}/state/{{run_id}}", name="debug_state")
         async def debug_state(run_id: str) -> Any:
             state = runtime.stream_state(run_id)
             if state is None:
                 return JSONResponse(status_code=404, content={"error": "unknown run"})
             return state
 
-        @router.get("/debug/violations", name="debug_violations")
+        @router.get(f"{DEBUG_PATH}/violations", name="debug_violations")
         async def debug_violations() -> dict[str, Any]:
             return {
                 "mode": runtime.sequencer_mode.value,
                 "violations": [violation_to_dict(v) for v in runtime.last_violations()],
             }
 
-        @router.get("/debug/runs/{run_id}", name="debug_run")
+        @router.get(f"{DEBUG_PATH}/runs/{{run_id}}", name="debug_run")
         async def debug_run(run_id: str) -> Any:
             # The per-run view is the accurate one: the aggregate routes above
             # answer for whichever run happened to finish last, which under
@@ -478,9 +480,9 @@ def make_relay_router(
     ```
 
     Mounts:
-    - Standard health check probe at `GET /health` (if ``include_health=True``)
-    - Full AG-UI wire protocol (``POST /agui``, ``GET /threads``, SSE streaming, long runs)
-    - Channel webhooks (e.g. Teams ``POST /api/messages``) if registered on ``RelayApp``.
+    - Standard health check probe at ``GET /api/v1/health`` (if ``include_health=True``)
+    - Full AG-UI wire protocol (``POST /api/v1/channels/web/agui``, ``GET /api/v1/threads``, SSE streaming, long runs)
+    - Channel webhooks (e.g. Teams ``POST /api/v1/channels/teams/messages``) if registered.
 
     Fail-fast & fail-loud:
     - Missing ``resolve_user_id`` raises ``ConfigurationError`` unless ``allow_anonymous=True``.
@@ -493,7 +495,7 @@ def make_relay_router(
 
     if include_health:
 
-        @router.get("/health", tags=["system"])
+        @router.get(HEALTH_PATH, tags=["system"])
         async def health_check() -> dict[str, Any]:
             channels = list(relay_or_runtime.channels.keys()) if is_relay_app else []
             return {

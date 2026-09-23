@@ -27,7 +27,7 @@ from agno_harness import (
     TeamsServiceUrlError,
     teams_messaging_endpoint,
 )
-from agno_harness.channels.teams import teams_topic_id
+from agno_harness.channels.teams import TEAMS_MESSAGES_PATH, teams_topic_id
 from agno_harness.channels.teams_auth import TeamsJwtVerifier
 from agno_harness.channels.teams_connector import (
     TeamsConnectorClient,
@@ -128,7 +128,7 @@ async def _post(
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        return await client.post("/api/messages", json=payload, headers=headers)
+        return await client.post(TEAMS_MESSAGES_PATH, json=payload, headers=headers)
 
 
 @pytest.mark.parametrize(
@@ -194,11 +194,14 @@ def test_bot_tenant_id_is_an_alias() -> None:
         _channel(tenant_id="one", bot_tenant_id="two")
 
 
-def test_messaging_endpoint_is_api_messages() -> None:
-    assert teams_messaging_endpoint("https://bot.example") == "https://bot.example/api/messages"
+def test_messaging_endpoint_names_the_teams_channel() -> None:
+    assert (
+        teams_messaging_endpoint("https://bot.example")
+        == "https://bot.example/api/v1/channels/teams/messages"
+    )
     assert (
         teams_messaging_endpoint("https://bot.example/", prefix="agent")
-        == "https://bot.example/agent/api/messages"
+        == "https://bot.example/agent/api/v1/channels/teams/messages"
     )
 
 
@@ -287,8 +290,36 @@ async def test_send_and_typing_hit_the_connector() -> None:
     bodies = [json.loads(call.content) for call in calls if not call.url.path.endswith("/token")]
     assert [body["type"] for body in bodies] == ["typing", "message"]
     assert bodies[1]["text"] == "hello"
+    assert bodies[1]["replyToId"] == "act-1"
+    assert str(calls[-1].url).endswith("/act-1")
     assert "smba.trafficmanager.net" in str(calls[-1].url)
     assert "/v3/conversations/" in str(calls[-1].url)
+
+
+@pytest.mark.asyncio
+async def test_cards_are_documents_and_are_not_posted_as_replies() -> None:
+    calls: list[httpx.Request] = []
+    channel = _channel(http=_scripted_http(calls))
+    channel.bot.remember(_activity())
+    destination = channel._event_from_activity(_activity()).key
+
+    sent = await channel.send(
+        destination,
+        OutboundMessage(
+            text="已记录",
+            cards=[{"type": "Container", "items": [{"type": "TextBlock", "text": "出差"}]}],
+        ),
+    )
+
+    assert sent == "out-message"
+    message_calls = [call for call in calls if not call.url.path.endswith("/token")]
+    body = json.loads(message_calls[-1].content)
+    assert "replyToId" not in body
+    assert message_calls[-1].url.path.endswith("/activities")
+    content = body["attachments"][0]["content"]
+    assert content["type"] == "AdaptiveCard"
+    assert content["body"][0]["type"] == "Container"
+    assert content["body"][0]["items"][0]["text"] == "出差"
 
 
 @pytest.mark.asyncio
@@ -383,7 +414,7 @@ async def test_group_messages_are_mention_only_and_invokes_still_run() -> None:
 def test_doctor_reports_endpoint_and_missing_credentials(tmp_path: Any) -> None:
     report = inspect_teams_config(public_base="https://bot.example", prefix="/agent")
     assert report.ok is False
-    assert report.messaging_endpoint == "https://bot.example/agent/api/messages"
+    assert report.messaging_endpoint == "https://bot.example/agent/api/v1/channels/teams/messages"
     assert any("APP_ID" in problem for problem in report.problems)
 
     env_file = tmp_path / ".env"
@@ -435,9 +466,12 @@ def test_init_mounts_channels_with_explicit_calls(
     assert (tmp_path / "app" / "knowledge" / "memory.md").is_file()
     assert (tmp_path / "app" / "agents" / "agent_builder.py").is_file()
     assert "data/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
-    assert "MUST CHANGE BEFORE PRODUCTION" in (tmp_path / "app" / "identity.py").read_text(
-        encoding="utf-8"
-    )
+    identity = (tmp_path / "app" / "identity.py").read_text(encoding="utf-8")
+    assert "X-User-Id" in identity
+    assert "local-dev" in identity
+    assert "MUST CHANGE BEFORE PRODUCTION" not in (
+        tmp_path / "app" / "agents" / "main" / "agent.py"
+    ).read_text(encoding="utf-8")
     if channel in {"all", "teams"}:
         assert "build_teams_resolver" in mounted
     else:

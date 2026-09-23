@@ -40,8 +40,8 @@ Host rule: the reducer must not drop frames. Chunks need `expose_debug_routes=Tr
   lastRequest={chat.lastRequest}
   debugEnabled={debug}
   onClearFrames={chat.clearFrames}
-  fetchChunks={() => fetch("/debug/chunks").then((r) => r.json())}
-  aguiPath="/agui"
+  fetchChunks={() => fetch("/api/v1/debug/chunks").then((r) => r.json())}
+  aguiPath="/api/v1/channels/web/agui"
 />
 ```
 

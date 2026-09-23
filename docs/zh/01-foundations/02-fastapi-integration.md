@@ -74,10 +74,10 @@ app.include_router(
 
 ### 挂载后自动拥有的能力：
 - `GET /agent/health`：就绪探针，`{ status, channels, resumeMode }`（`none` / `history` / `live`）。React kit 第一次发送前读 `resumeMode`。
-- `POST /agent/agui`：标准 AG-UI SSE 协议通信管道；
+- `POST /agent/api/v1/channels/web/agui`：标准 AG-UI SSE 协议通信管道；
 - `GET /agent/threads`：基于当前登录用户隔离的会话列表；
 - `GET /agent/threads/{id}/messages`：历史消息重放；
-- 如果 `relay.add_channel(teams_channel)`，Teams Webhook 是 `POST /agent/api/messages`。渠道路由固定是 `/api/messages`，router 的 `prefix` 加在前面。没有 `/agent/teams/messages` 这条路由。
+- 如果 `relay.add_channel(teams_channel)`，Teams Webhook 是 `POST /agent/api/v1/channels/teams/messages`。渠道路由固定是 `/api/v1/channels/teams/messages`，router 的 `prefix` 加在前面。
 
 ---
 
@@ -101,7 +101,7 @@ router = relay.get_router(resolve_user_id=resolve_user)
 ```
 
 ### 运行时强拦截 (Runtime 401 Rejection)
-当客户端发起 `POST /agui` 或读取 `GET /threads` 时：
+当客户端发起 `POST /api/v1/channels/web/agui` 或读取 `GET /threads` 时：
 - 如果 `resolve_user_id(request)` 返回 `None`，网关会**立刻返回 `HTTP 401 Unauthorized`**；
 - 绝不会降级为匿名执行，杜绝未登录用户读取或写入其他会话的风险。
 

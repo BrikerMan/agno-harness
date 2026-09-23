@@ -50,6 +50,23 @@ def copy_project(target: Path, *, channel: str) -> None:
         source = _variant_source(rel.as_posix(), selected, variants) or src
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, dest)
+    copy_knowledge_seeds(target)
+
+
+def copy_knowledge_seeds(project: Path) -> None:
+    """Copy app/knowledge markdown into data/knowledge when the live file is missing."""
+    seed_root = project / "app" / "knowledge"
+    if not seed_root.is_dir():
+        return
+    live_root = project / "data" / "knowledge"
+    for src in sorted(seed_root.rglob("*")):
+        if not src.is_file() or src.suffix.lower() not in {".md", ".markdown"}:
+            continue
+        dest = live_root / src.relative_to(seed_root)
+        if dest.exists():
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
 
 
 def _variant_source(relative: str, channel: str, variants: Path) -> Path | None:

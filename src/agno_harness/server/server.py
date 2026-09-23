@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from ..api_paths import HEALTH_PATH, join_prefix
+
 if TYPE_CHECKING:
     from ..app import RelayApp
     from ..core.streamui.schema import CardCatalog
@@ -153,7 +155,7 @@ class RelayServer(FastAPI):
         """Configure application routes.
 
         Automatically binds:
-        - Health check endpoint at GET /health
+        - Health check endpoint at GET /api/v1/health
         - AG-UI wire protocol SSE & Thread routes via make_agui_router
         - Channel webhooks (e.g. Teams, Lark) if registered on relay.
         """
@@ -167,7 +169,7 @@ class RelayServer(FastAPI):
             resume_mode = "history"
 
         # 1. Standard Health Check
-        @self.get("/health", tags=["system"])
+        @self.get(join_prefix(self.api_prefix, HEALTH_PATH), tags=["system"])
         async def health_check() -> dict[str, Any]:
             return {
                 "status": "healthy",

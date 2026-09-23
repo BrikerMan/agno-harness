@@ -48,7 +48,7 @@ sequenceDiagram
     participant LLM as Agno Agent (LLM + Search)
 
     User->>Azure: @机器人 搜索最新的 Python 3.13 新特性
-    Azure->>Channel: POST /api/messages (Webhook 报文)
+    Azure->>Channel: POST /api/v1/channels/teams/messages (Webhook 报文)
     
     rect rgb(240, 248, 255)
     Note over Azure,Channel: 阶段一：即时响应 (Fast ACK) 防重试雪崩
@@ -141,7 +141,7 @@ relay.add_channel(TeamsChannel())
 # 6. 挂载到企业 FastAPI 服务中
 app = FastAPI(title="Teams Agent Service", lifespan=relay.lifespan)
 
-# 不加 prefix 时，Azure Messaging endpoint 是 POST /api/messages。
+# 不加 prefix 时，Azure Messaging endpoint 是 POST /api/v1/channels/teams/messages。
 # allow_anonymous 只作用于 AG-UI 路由；Teams webhook 自己校验 Bot Framework JWT。
 app.include_router(relay.get_router(allow_anonymous=True))
 
@@ -166,7 +166,7 @@ ngrok http 8000
 ### 步骤 B：在 Azure 配置 Messaging Endpoint
 登录 [Azure Portal](https://portal.azure.com) -> 进入你的 Azure Bot 资源 -> **Configuration** -> 将 **Messaging endpoint** 填入：
 ```
-https://abc1234.ngrok-free.app/api/messages
+https://abc1234.ngrok-free.app/api/v1/channels/teams/messages
 ```
 
 ### 步骤 C：在 Teams 中发消息实测

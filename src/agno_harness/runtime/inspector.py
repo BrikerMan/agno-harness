@@ -4,7 +4,7 @@ Everything the debug UI reads used to live on the runtime object: one recorder,
 one ``_last_violations`` list, one map of stream states. That is fine for a
 single run at a time and wrong the moment two runs overlap, which is the normal
 case for a server — the second run's repairs overwrite the first's, and a
-developer reading ``/debug/violations`` gets an answer about a run they never
+developer reading ``/api/v1/debug/violations`` gets an answer about a run they never
 asked about.
 
 So the state moves down to where it belongs: one inspector per run, held in a

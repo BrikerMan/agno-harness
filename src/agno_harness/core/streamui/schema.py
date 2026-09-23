@@ -110,6 +110,17 @@ class BlockSchema(BaseModel):
     #: Item type for a homogeneous block, letting its lines omit ``schema``.
     item: ClassVar[type[BaseModel] | None] = None
 
+    #: Adaptive Card container style for the fallback Teams renderer.
+    #: Empty leaves the card unstyled. ``emphasis``, ``accent``, ``good``,
+    #: ``attention``, and ``warning`` are the Teams values.
+    teams_container_style: ClassVar[str] = ""
+
+    #: ``Monospace`` renders a text body in a fixed-width font.
+    teams_text_font: ClassVar[str] = ""
+
+    #: Render a text body as an Adaptive Card ``CodeBlock`` instead of a TextBlock.
+    teams_code_block: ClassVar[bool] = False
+
     @classmethod
     def props_model(cls) -> type[BaseModel]:
         return cls
@@ -293,6 +304,10 @@ class CardCatalog:
         if item is not None and item is not schema:
             self.register_item(item)
         return self
+
+    def block_schema(self, name: str) -> type[BlockSchema] | None:
+        """Return the registered block class, or None when the name is unknown."""
+        return self._blocks.get(name)
 
     def register_item(self, item: type[BaseModel]) -> CardCatalog:
         name = getattr(item, "schema_name", "")
@@ -624,10 +639,14 @@ class CardCatalog:
         title = props.get("title") or block_name.replace("-", " ").title()
 
         if platform == "teams":
+            schema = self._blocks.get(block_name)
+            style = str(getattr(schema, "teams_container_style", "") or "")
             body: list[dict[str, Any]] = [
                 {"type": "TextBlock", "text": str(title), "weight": "Bolder", "size": "Medium"}
             ]
             body.extend(rendered_items)
+            if style:
+                body = [{"type": "Container", "style": style, "bleed": True, "items": body}]
             return {
                 "type": "AdaptiveCard",
                 "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",

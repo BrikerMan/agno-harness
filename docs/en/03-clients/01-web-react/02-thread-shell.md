@@ -17,7 +17,7 @@ runtime.on_post_run(make_thread_title_hook(runtime))
 | Re-trigger | `forwardedProps.refreshTitle === true`. |
 | Model input | First run: `scope.user_text` + completion. Later: last `max_turns` in the session. |
 | Persist | Agno session `session_data["session_name"]`. |
-| `GET /threads` | `{ threadId, title, runCount, messageCount, updatedAt }`. `title` prefers the saved name, else first user message `[:40]`. `runCount` = how many times a human spoke. `messageCount` is **deprecated, always 0**. Sessions with no run stay off the list. |
+| `GET /api/v1/threads` | `{ threadId, title, runCount, messageCount, updatedAt }`. `title` prefers the saved name, else first user message `[:40]`. `runCount` = how many times a human spoke. `messageCount` is **deprecated, always 0**. Sessions with no run stay off the list. |
 | Event | `CUSTOM` `name="thread.title"` `value={ threadId, title }`. |
 | Failure | Naming failure does not affect the main run. Sidebar stays “New task” or the user-message fallback. |
 | LLM | Short completion on `agent.model`. **Do not** `agent.arun()`. |
@@ -26,12 +26,12 @@ The product must:
 
 - Optimistic new row: **“New task”**. Never flash a UUID.
 - **Create on send:** on the first message, register `{ threadId, title: "New task", runCount: 1, updatedAt }` locally.
-- **Merge sidebar:** after `GET /threads`, if the active `threadId` still has messages and is missing from the server list, pin it on top. The server takes over after the first run commits.
+- **Merge sidebar:** after `GET /api/v1/threads`, if the active `threadId` still has messages and is missing from the server list, pin it on top. The server takes over after the first run commits.
 - Reducer: `thread.title` updates the current title; crossfade the same row, do not remount.
 
-There is no `POST /threads/{id}/title`. **Wrong:** sidebar `title || threadId`; a second HTTP call just to name.
+There is no `POST /api/v1/threads/{id}/title`. **Wrong:** sidebar `title || threadId`; a second HTTP call just to name.
 
-Agno’s `AgentSession` commits only after the first run **fully finishes**. A refresh mid-first-run that trusts only `GET /threads` will drop the current conversation.
+Agno’s `AgentSession` commits only after the first run **fully finishes**. A refresh mid-first-run that trusts only `GET /api/v1/threads` will drop the current conversation.
 
 ## 2. Four-state sidebar
 
@@ -109,11 +109,11 @@ Store the view watermark in `localStorage` (e.g. `agui:thread_views`). Mark view
 ## 3. The rest of the shell
 
 - The client generates `threadId`. Another user’s thread is `404`, never `403`. Switching login must `reset`.
-- Identity follows the login session. Do not put `userId` in the `POST /agui` JSON.
+- Identity follows the login session. Do not put `userId` in the `POST /api/v1/channels/web/agui` JSON.
 - Switch thread: abort the **current stream** (the connection), `loadThread`, `stick.pin()`. Do **not** abort a long-run job just because you left.
 - Delete the current thread, then `reset`.
 - Composer: Enter sends, Shift+Enter newline. Disable new messages when **`isStreaming` or `pendingTools.length > 0`**. While streaming, the button is Stop.
-- Stop means “do not run”: abort this HTTP when resume is `none`; after long-run also `POST /runs/{id}/abort`. Closing a tab must **not** abort.
+- Stop means “do not run”: abort this HTTP when resume is `none`; after long-run also `POST /api/v1/runs/{id}/abort`. Closing a tab must **not** abort.
 - `forwardedProps.reasoning` → thinking budget. If thinking is off, do not paint an empty reasoning bar.
 - `dropEmptyTail`: drop an empty assistant bubble after abort.
 - A mismatched `X-Agui-Protocol` must fail loudly, not half-render.

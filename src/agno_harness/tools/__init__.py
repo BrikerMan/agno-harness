@@ -11,6 +11,7 @@ from .artifact import (
     read_artifact_section,
     stream_artifact,
 )
+from .exa import ExaTools
 from .serper import SerperError, SerperResult, SerperTools, SerperUsage
 from .subagent import TOOL_NAME as SUBAGENT_TOOL_NAME
 from .subagent import SubAgentTool, SubAgentToolkit
@@ -25,6 +26,7 @@ from .todo import (
 
 __all__ = [
     "ArtifactCard",
+    "ExaTools",
     "PresentationDeck",
     "STATE_TO_MARKER",
     "SUBAGENT_TOOL_NAME",

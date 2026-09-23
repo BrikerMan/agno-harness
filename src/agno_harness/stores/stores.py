@@ -86,7 +86,7 @@ class HistoryArchive(Protocol):
     """Durable coalesced frames for a finished run.
 
     Written once when a run settles. Token-level deltas stay on the hot log;
-    this is what ``GET /threads/{id}/frames`` reads after Redis has forgotten
+    this is what ``GET /api/v1/threads/{id}/frames`` reads after Redis has forgotten
     them.
     """
 

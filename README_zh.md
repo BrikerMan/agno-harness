@@ -71,14 +71,14 @@ python agent.py
 
 输入一句话。`/reset` 开一段新对话。`/exit` 退出。密钥只放在 `.env`。`.gitignore` 已经忽略这个文件。
 
-`--channel` 决定进程怎么启动。每次 `init` 都是同一棵树：一个主 Agent、一个占位帮手（`AgentBuilder`）、Markdown 笔记、一个技能、工具、卡片，以及 `channels/`。`AgentBuilder` 和用户解析都标了 `MUST CHANGE BEFORE PRODUCTION`，上线前必须换掉。
+`--channel` 决定进程怎么启动。每次 `init` 都是同一棵树：一个主 Agent、一个示例专家（`AgentBuilder`）、Markdown 笔记、一个技能、工具、卡片，以及 `channels/`。`AgentBuilder` 不了解你的产品。`app/identity.py` 里的解析信任请求头，或者把所有人当成同一个本地用户。对外服务之前，把这两处换成你自己的实现。
 
 ```text
 agent.py                         进程入口
 app/main.py                      FastAPI（create_app）
 app/cli.py                       终端循环
 app/identity.py                  默认 build_user_resolver；Teams 用 build_teams_resolver
-app/paths.py                     data/agent.db、data/sessions.db、data/knowledge/
+app/paths.py                     data/agent.db、data/knowledge/
 app/knowledge/                   笔记种子，缺文件时复制到 data/knowledge/
 data/                            已 gitignore。数据库和 Agent 实际搜索的笔记
 app/agents/main/                 主 Agent
@@ -87,7 +87,10 @@ app/agents/main/                 主 Agent
   cards/                         一张卡一个类，登记到 CARD_CATALOG
   actions/                       按钮处理
   skills/<name>/SKILL.md         用到时再加载
-app/agents/agent_builder.py      占位帮手。上线前换掉。
+app/agents/researcher/           网页检索专家
+  instructions.md                检索结果怎么回报
+  tools/exa.py                   公共 Exa 搜索，不需要 API key
+app/agents/agent_builder.py      单文件示例专家
 app/channels/                    一种传输一个模块
   __init__.py                    mount_all 先挂 Teams，再挂 mount_web
 app/services/                    共用的业务函数
@@ -101,7 +104,7 @@ app/services/                    共用的业务函数
 | 新工具 | `app/agents/<name>/tools/<tool>.py`，再追加到 `TOOLS` |
 | 新卡片 | `cards/` 里一个 `BlockSchema`，注册到 `CARD_CATALOG` |
 | 新技能 | `skills/<name>/SKILL.md`。`cards:` 里的名字必须已经在这个 Agent 的 catalog 里 |
-| 新帮手 | `app/agents/<name>.py` 写出 `NAME` 和 `build()`，在 `app/agents/main/agent.py` 里传给 `assemble()` |
+| 新专家 | `app/agents/<name>/`，里面是 `agent.py`、`instructions.md` 和 `tools/`，再在 `app/agents/main/agent.py` 里把 `build()` 传给 `assemble()`。没有自己工具的专家可以仍是 `app/agents/<name>.py` |
 | 新渠道 | `app/channels/<name>.py` 写出 `mount(relay, app)`，在 `mount_all` 里、`mount_web` 之前调用 |
 
 生成项目里每个模块的 docstring 写着该目录的扩展方式。照着已有文件加。
@@ -113,8 +116,8 @@ app/services/                    共用的业务函数
 | `--channel` | `python agent.py` 做什么 |
 | --- | --- |
 | `cli` | 直接调用 `cli.mount`，在终端对话。`app/main.py` 里的 FastAPI 不会启动。 |
-| `web` | 监听 8000。对话接口是 `POST /agui`。网页用 [Web / React](docs/zh/03-clients/01-web-react/README.md) 或 [frontend kit](resources/frontend-kit/README_zh.md)。 |
-| `teams` | `mount_all` 调用 `mount_web` 和 `mount_teams`。Azure 消息地址是公网主机加上 `/api/messages`。 |
+| `web` | 监听 8000。对话接口是 `POST /api/v1/channels/web/agui`。网页用 [Web / React](docs/zh/03-clients/01-web-react/README.md) 或 [frontend kit](resources/frontend-kit/README_zh.md)。 |
+| `teams` | `mount_all` 调用 `mount_web` 和 `mount_teams`。Azure 消息地址是公网主机加上 `/api/v1/channels/teams/messages`。 |
 | `lark` | `mount_all` 调用 `mount_lark`。机器人用 WebSocket 自己连出去。 |
 | `all`（默认） | `mount_all` 调用 web、teams、lark、cli。 |
 
@@ -143,7 +146,7 @@ python agent.py
 
 完整步骤：[04 飞书](docs/zh/00-agent-cookbook/04-lark-feishu-agent.md)。
 
-`POST /agui?long-run=1` 出 SSE。刷新走 `GET /runs/{id}/attach`。历史走 `/frames`。已有 FastAPI 时，用 `relay.get_router(resolve_user_id=...)` 挂进去。
+`POST /api/v1/channels/web/agui?long-run=1` 出 SSE。刷新走 `GET /api/v1/runs/{id}/attach`。历史走 `GET /api/v1/threads/{id}/frames`。健康检查是 `GET /api/v1/health`。已有 FastAPI 时，用 `relay.get_router(resolve_user_id=...)` 挂进去。
 
 ---
 

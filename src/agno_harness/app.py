@@ -11,6 +11,7 @@ from uuid import uuid4
 from ag_ui.core import EventType, RunAgentInput, UserMessage
 from ag_ui.core.types import ToolMessage
 
+from .background_task.context import bind_origin, reset_origin
 from .channels.base import BaseChannel
 from .core.attachment import AttachmentProcessor
 from .core.channel import ChannelEvent, OutboundMessage
@@ -507,6 +508,7 @@ class RelayApp:
         with contextlib.suppress(Exception):
             await channel.typing(key, True)
 
+        origin_token = bind_origin(channel.name, key)
         try:
             meta = cast(
                 dict[str, Any],
@@ -599,11 +601,14 @@ class RelayApp:
             # Ensure ghost reaction is resolved to ❌
             with contextlib.suppress(Exception):
                 await channel.settle(key, ack_token, emoji="❌")
-            err_msg = OutboundMessage(text="抱歉，处理您的请求时遇到了问题，请稍后重试。")
+            err_msg = OutboundMessage(
+                text="Sorry, something went wrong while handling your request. Please try again."
+            )
             with contextlib.suppress(Exception):
                 await channel.send(key, err_msg)
             return err_msg
         finally:
+            reset_origin(origin_token)
             with contextlib.suppress(Exception):
                 await channel.typing(key, False)
 

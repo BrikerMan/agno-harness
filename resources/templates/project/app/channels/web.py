@@ -1,4 +1,4 @@
-"""Web channel. Chat API is POST /agui.
+"""Web channel. Chat API is POST /api/v1/channels/web/agui.
 
 Extend
 ------
@@ -20,6 +20,5 @@ def mount(relay, app, *, resolve_user_id=None) -> None:
         message = "Web channel is enabled but no FastAPI app was provided."
         log.error(message)
         raise RuntimeError(message)
-    # MUST CHANGE BEFORE PRODUCTION: replace the resolver before you go live.
     resolver = resolve_user_id or build_user_resolver()
     app.include_router(relay.get_router(resolve_user_id=resolver))

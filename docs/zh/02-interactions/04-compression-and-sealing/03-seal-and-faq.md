@@ -44,7 +44,7 @@ seal_session_run(session)
 | 1 | 连聊 / 打工具直到超过阈值 | 日志从 `SKIP (x < 7000)` 变成一次 `TRIGGERED`；前端出折叠卡 `ak → bk (-%)`，不是又一篇长气泡 |
 | 2 | 点开卡 | 能读到 Intent / Ground Truth 里的**具体数字和路径**，不是「已查询了天气」 |
 | 3 | 再问一句「我最开始要求你做什么」 | 模型答得上第 1 轮约束；不要靠侧栏里那条已被修剪的原文气泡 |
-| 4 | 刷新 | 检查点卡还在；`GET /threads/{id}/frames` 回放能展开同一份摘要 |
+| 4 | 刷新 | 检查点卡还在；`GET /api/v1/threads/{id}/frames` 回放能展开同一份摘要 |
 | 5 | 故意设 `num_history_runs=None` 对照（仅本地） | 第 4 轮开始丢早期约束，且可能永远 `SKIP`——用来确认 **100 才对** |
 | 6 | Langfuse / OTel | 有 `context_compression` span，带 `original_tokens` / `saved_tokens` |
 

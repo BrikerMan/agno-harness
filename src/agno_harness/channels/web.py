@@ -1,14 +1,18 @@
 from typing import Any
 
+from ..api_paths import CHANNELS_PATH
 from ..core.channel import OutboundMessage
 from ..sessions.models import ConversationKey
 from .base import BaseChannel
+
+#: Chat API for the web channel. Same shape as the Teams webhook path.
+WEB_AGUI_PATH = f"{CHANNELS_PATH}/web/agui"
 
 
 class WebChannel(BaseChannel):
     """Web AG-UI transport channel serving Server-Sent Events over FastAPI."""
 
-    def __init__(self, prefix: str = "/agui", runtime: Any = None) -> None:
+    def __init__(self, prefix: str = WEB_AGUI_PATH, runtime: Any = None) -> None:
         super().__init__(name="web")
         self.prefix = prefix
         self.runtime = runtime

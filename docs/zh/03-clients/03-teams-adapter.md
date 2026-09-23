@@ -21,7 +21,7 @@ app.include_router(relay.get_router(allow_anonymous=True))
 
 `RelayApp` 要的是 `AgentRuntime`，不是裸 `Agent`。租户参数是 `tenant_id`（`bot_tenant_id` 仍可作为别名）。
 
-Webhook 是 `POST /api/messages`。router 的 `prefix` 会加在前面，所以 `prefix="/agent"` 时 Azure Messaging endpoint 是 `POST /agent/api/messages`。没有 `/agent/teams/messages`。
+Webhook 是 `POST /api/v1/channels/teams/messages`。router 的 `prefix` 会加在前面，所以 `prefix="/agent"` 时 Azure Messaging endpoint 是 `POST /agent/api/v1/channels/teams/messages`。
 
 `agno-harness teams doctor` 会打印这个地址，检查环境变量，并申请一次 connector token。
 

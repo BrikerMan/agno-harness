@@ -42,7 +42,7 @@ sequenceDiagram
     participant Runtime as AgentRuntime
     participant LLM as Agno Agent
 
-    Browser->>Router: POST /agent/agui (login identity)
+    Browser->>Router: POST /agent/api/v1/channels/web/agui (login identity)
     Router-->>Browser: 200 text/event-stream
     loop about every 5s
         Runtime-->>Browser: : ping
@@ -53,7 +53,7 @@ sequenceDiagram
     Runtime-->>Browser: run_finished
 ```
 
-After mount you have `POST /agent/agui`, `GET /agent/threads`, and `GET /agent/threads/{id}/frames` (once storage is on). Long-run `/attach`: [Web 04](../03-clients/01-web-react/04-attach-and-longrun.md).
+After mount you have `POST /agent/api/v1/channels/web/agui`, `GET /agent/api/v1/threads`, and `GET /agent/api/v1/threads/{id}/frames` (once storage is on). Long-run `/attach`: [Web 04](../03-clients/01-web-react/04-attach-and-longrun.md).
 
 Read identity from the login (cookie / session / `request.state`), not `userId` in JSON. A missing or foreign thread is `404`. See [02 FastAPI](../01-foundations/02-fastapi-integration.md).
 
@@ -113,7 +113,7 @@ async def index():
           const text = document.getElementById('q').value;
           const log = document.getElementById('log');
           log.textContent += "\\n\\nYou: " + text + "\\nAssistant: ";
-          const resp = await fetch('/agent/agui', {
+          const resp = await fetch('/agent/api/v1/channels/web/agui', {
             method: 'POST',
             headers: {'Content-Type':'application/json','X-User-Id':'local-dev'},
             body: JSON.stringify({

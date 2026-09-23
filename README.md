@@ -73,14 +73,14 @@ python agent.py
 
 Type a message. `/reset` starts a fresh chat. `/exit` quits. The key stays in `.env`. `.gitignore` already ignores that file.
 
-`--channel` chooses the process entry. Every project gets the same tree: a coordinator, one placeholder helper (`AgentBuilder`), Markdown notes, one skill, tools, cards, and a `channels/` package. `AgentBuilder` and the user resolver are marked `MUST CHANGE BEFORE PRODUCTION`.
+`--channel` chooses the process entry. Every project gets the same tree: a coordinator, one sample specialist (`AgentBuilder`), Markdown notes, one skill, tools, cards, and a `channels/` package. `AgentBuilder` does not know your product. The resolvers in `app/identity.py` trust a header or a shared local user. Replace both before this process serves anyone but you.
 
 ```text
 agent.py                         process entry
 app/main.py                      FastAPI app (create_app)
 app/cli.py                       terminal loop
 app/identity.py                  build_user_resolver; Teams uses build_teams_resolver
-app/paths.py                     data/agent.db, data/sessions.db, data/knowledge/
+app/paths.py                     data/agent.db, data/knowledge/
 app/knowledge/                   seed notes, copied into data/knowledge/ when missing
 data/                            gitignored databases and the notes the agent searches
 app/agents/main/                 coordinator
@@ -89,7 +89,10 @@ app/agents/main/                 coordinator
   cards/                         one card class per file, registered on CARD_CATALOG
   actions/                       button handlers
   skills/<name>/SKILL.md         loaded on demand
-app/agents/agent_builder.py      placeholder helper. Replace before production.
+app/agents/researcher/           web research specialist
+  instructions.md                how search results are reported
+  tools/exa.py                   public Exa search, no API key
+app/agents/agent_builder.py      one-file sample specialist
 app/channels/                    one module per transport
   __init__.py                    mount_all calls mount_teams(relay, app) before mount_web
 app/services/                    shared functions
@@ -104,7 +107,7 @@ app/services/                    shared functions
 | A new tool                      | `app/agents/<name>/tools/<tool>.py`, then append it to `TOOLS`                                                                            |
 | A new card                      | a `BlockSchema` in `cards/`, register it on `CARD_CATALOG`                                                                                |
 | A new skill                     | `skills/<name>/SKILL.md`. `cards:` names must already be on that agent's catalog                                                          |
-| A new helper                    | `app/agents/<name>.py` with `NAME` and `build()`, then pass the agent into `assemble()` in `app/agents/main/agent.py`                     |
+| A new specialist                | `app/agents/<name>/` with `agent.py`, `instructions.md`, and `tools/`, then pass `build()` into `assemble()` in `app/agents/main/agent.py`. A specialist with no tools of its own can stay `app/agents/<name>.py` |
 | A new channel                   | `app/channels/<name>.py` with `mount(relay, app)`, import it, and call it inside `mount_all` before `mount_web`                           |
 
 
@@ -118,8 +121,8 @@ Helpers are not mounted on a channel. The coordinator is the only agent on `Agen
 | `--channel`     | What `python agent.py` does                                                                                                                                                |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cli`           | Calls `cli.mount` and reads the terminal. FastAPI stays in `app/main.py` and is not started.                                                                               |
-| `web`           | Serves port 8000. Chat API is `POST /agui`. Pair it with [Web / React](docs/en/03-clients/01-web-react/README.md) or the [frontend kit](resources/frontend-kit/README.md). |
-| `teams`         | `mount_all` calls `mount_web` and `mount_teams`. Azure messaging URL is your public host plus `/api/messages`.                                                             |
+| `web`           | Serves port 8000. Chat API is `POST /api/v1/channels/web/agui`. Pair it with [Web / React](docs/en/03-clients/01-web-react/README.md) or the [frontend kit](resources/frontend-kit/README.md). |
+| `teams`         | `mount_all` calls `mount_web` and `mount_teams`. Azure messaging URL is your public host plus `/api/v1/channels/teams/messages`.                                                             |
 | `lark`          | `mount_all` calls `mount_lark`. The bot connects out over a WebSocket.                                                                                                     |
 | `all` (default) | `mount_all` calls web, teams, lark, and cli.                                                                                                                               |
 
@@ -149,7 +152,7 @@ python agent.py
 
 Walkthrough: [04 Lark](docs/en/00-agent-cookbook/04-lark-feishu-agent.md).
 
-`POST /agui?long-run=1` streams SSE. Reconnect on `GET /runs/{id}/attach`. History is `/frames`. An existing FastAPI app can mount `relay.get_router(resolve_user_id=...)`.
+`POST /api/v1/channels/web/agui?long-run=1` streams SSE. Reconnect on `GET /api/v1/runs/{id}/attach`. History is `GET /api/v1/threads/{id}/frames`. Health is `GET /api/v1/health`. An existing FastAPI app can mount `relay.get_router(resolve_user_id=...)`.
 
 ---
 

@@ -1,6 +1,6 @@
 """Process entry. Serves FastAPI on port 8000.
 
-Web is POST /agui. Teams is POST /api/messages when that channel is enabled.
+Web is POST /api/v1/channels/web/agui. Teams is POST /api/v1/channels/teams/messages when that channel is enabled.
 An enabled channel with missing settings logs an error and the process stops.
 The terminal entry is python -m app.cli.
 """

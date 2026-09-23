@@ -57,31 +57,31 @@ app.include_router(
         runtime,
         long_runs=LongRunManager(runtime, log=hot, stream=hot),
         resolve_user_id=resolve_user,
-        include_health=True,          # GET /health → { resumeMode }
+        include_health=True,          # GET /api/v1/health → { resumeMode }
         expose_debug_routes=True,     # optional DevTools chunks
     ),
     prefix="/api",                    # or proxy /api → "" and omit prefix
 )
 ```
 
-`make_relay_router` / `relay.get_router()` already mounts `GET /health` with `resumeMode`.
+`make_relay_router` / `relay.get_router()` already mounts `GET /api/v1/health` with `resumeMode`.
 
 The hook **must** see `resumeMode` before the first send. Missing field → treated as `"none"` → refresh never attaches.
 
 | Client | Server |
 | --- | --- |
-| `GET {apiBase}/health` | `{ status, resumeMode: "none" \| "history" \| "live" }` |
-| `POST {apiBase}/agui?long-run=1` | SSE. Header `X-Agui-Resume`, `X-Agui-Protocol: 1.0` |
-| `GET {apiBase}/runs/{id}/attach?after=` | live tail from the SSE `id:` cursor |
-| `POST {apiBase}/runs/{id}/abort` | Stop only — not tab close |
-| `GET {apiBase}/threads/{id}/frames` | replay through the same `applyEvent` |
-| `GET {apiBase}/threads/{id}/active` | running / paused |
+| `GET {apiBase}/api/v1/health` | `{ status, resumeMode: "none" \| "history" \| "live" }` |
+| `POST {apiBase}/api/v1/channels/web/agui?long-run=1` | SSE. Header `X-Agui-Resume`, `X-Agui-Protocol: 1.0` |
+| `GET {apiBase}/api/v1/runs/{id}/attach?after=` | live tail from the SSE `id:` cursor |
+| `POST {apiBase}/api/v1/runs/{id}/abort` | Stop only — not tab close |
+| `GET {apiBase}/api/v1/threads/{id}/frames` | replay through the same `applyEvent` |
+| `GET {apiBase}/api/v1/threads/{id}/active` | running / paused |
 
 Identity is a header the server trusts (`resolve_user_id`). Never a `userId` field in `RunAgentInput`.
 
 ## Do not
 
-- Rebuild bubbles from `GET /threads/{id}/messages`
+- Rebuild bubbles from `GET /api/v1/threads/{id}/messages`
 - Paint tools outside `body.order[]`
 - `POST .../abort` on tab close
 - Mix attach `id:` with frames `{runId}:{offset}`

@@ -291,7 +291,7 @@ def test_channel_instantiations_and_routers():
     assert teams.name == "teams"
     router = teams.get_router()
     routes = [r.path for r in router.routes]
-    assert "/api/messages" in routes
+    assert "/api/v1/channels/teams/messages" in routes
 
     # 4. WebChannel
     runtime = AgentRuntime(agent=FakeAgent([]))
@@ -299,7 +299,7 @@ def test_channel_instantiations_and_routers():
     assert web.name == "web"
     web_router = web.get_router()
     web_routes = [r.path for r in web_router.routes]
-    assert "/agui" in web_routes
+    assert "/api/v1/channels/web/agui" in web_routes
 
 
 def test_message_collector_renders_hitl_cards():

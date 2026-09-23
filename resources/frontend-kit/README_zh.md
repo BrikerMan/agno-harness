@@ -57,31 +57,31 @@ app.include_router(
         runtime,
         long_runs=LongRunManager(runtime, log=hot, stream=hot),
         resolve_user_id=resolve_user,
-        include_health=True,          # GET /health → { resumeMode }
+        include_health=True,          # GET /api/v1/health → { resumeMode }
         expose_debug_routes=True,     # 可选 DevTools chunks
     ),
     prefix="/api",                    # 或代理 /api → "" 且不设 prefix
 )
 ```
 
-`make_relay_router` / `relay.get_router()` 已经挂 `GET /health`，带 `resumeMode`。
+`make_relay_router` / `relay.get_router()` 已经挂 `GET /api/v1/health`，带 `resumeMode`。
 
 hook 必须在第一次发送前读到 `resumeMode`。缺字段会被当成 `"none"`，刷新永远不会 attach。
 
 | 客户端 | 服务端 |
 | --- | --- |
-| `GET {apiBase}/health` | `{ status, resumeMode: "none" \| "history" \| "live" }` |
-| `POST {apiBase}/agui?long-run=1` | SSE。头 `X-Agui-Resume`、`X-Agui-Protocol: 1.0` |
-| `GET {apiBase}/runs/{id}/attach?after=` | 从 SSE `id:` 游标续 |
-| `POST {apiBase}/runs/{id}/abort` | 只对应 Stop，不是关 tab |
-| `GET {apiBase}/threads/{id}/frames` | 同一套 `applyEvent` 回放 |
-| `GET {apiBase}/threads/{id}/active` | running / paused |
+| `GET {apiBase}/api/v1/health` | `{ status, resumeMode: "none" \| "history" \| "live" }` |
+| `POST {apiBase}/api/v1/channels/web/agui?long-run=1` | SSE。头 `X-Agui-Resume`、`X-Agui-Protocol: 1.0` |
+| `GET {apiBase}/api/v1/runs/{id}/attach?after=` | 从 SSE `id:` 游标续 |
+| `POST {apiBase}/api/v1/runs/{id}/abort` | 只对应 Stop，不是关 tab |
+| `GET {apiBase}/api/v1/threads/{id}/frames` | 同一套 `applyEvent` 回放 |
+| `GET {apiBase}/api/v1/threads/{id}/active` | running / paused |
 
 身份走服务端信任的 header（`resolve_user_id`）。不要把 `userId` 放进 `RunAgentInput`。
 
 ## 不要
 
-- 用 `GET /threads/{id}/messages` 重画气泡
+- 用 `GET /api/v1/threads/{id}/messages` 重画气泡
 - 把 tool 从 `body.order[]` 捞出来另画
 - 关 tab 就 `POST .../abort`
 - 把 attach 的 `id:` 和 frames 的 `{runId}:{offset}` 混用

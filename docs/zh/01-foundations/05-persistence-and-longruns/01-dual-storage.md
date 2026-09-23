@@ -3,14 +3,14 @@
 完整历史是 **Agno `db` + harness `Stores`**，谁也替不了谁。
 
 - **Agno `db`**（`Agent` 和 `AgentRuntime` 上的 `SqliteDb` / `PostgresDb`）— 下一轮模型消息。缺了它，frames 在盘上也没用，模型每轮从零开始。
-- **Harness `Stores`** — 用户看过的流。缺了它，`/threads/{id}/frames` 还原不了当时的卡片 / 工具 / 思考。
+- **Harness `Stores`** — 用户看过的流。缺了它，`/api/v1/threads/{id}/frames` 还原不了当时的卡片 / 工具 / 思考。
 
 Harness 已是持久 SQL、Agno `db` 却缺失或内存时，`AgentRuntime` 抛 `StoragePairingError`，除非 `allow_ephemeral_agno_db=True`。
 
 Harness 内部还有一层拆分：
 
-- **热 log**（`RedisRunEventLog`，或进程内 stand-in）— 每个 AG-UI delta、可阻塞 tail、TTL。`?long-run=1` 和 `GET /runs/{id}/attach` 读它。不要用 SQL 装 token。
-- **History archive**（SQL）— 结束后合成的事件列表。连续 content delta 折成一帧。`GET /threads/{id}/frames` 走这里。
+- **热 log**（`RedisRunEventLog`，或进程内 stand-in）— 每个 AG-UI delta、可阻塞 tail、TTL。`?long-run=1` 和 `GET /api/v1/runs/{id}/attach` 读它。不要用 SQL 装 token。
+- **History archive**（SQL）— 结束后合成的事件列表。连续 content delta 折成一帧。`GET /api/v1/threads/{id}/frames` 走这里。
 
 底座不替你建表。用 mixin 拼到你的 `Base`，自己 `create_all` / Alembic。
 

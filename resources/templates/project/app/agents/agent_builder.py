@@ -1,8 +1,10 @@
-"""Placeholder specialist.
+"""Sample specialist the coordinator can call.
 
-MUST CHANGE BEFORE PRODUCTION.
-Replace this module with a real helper, or stop passing build() into the
-main agent, before this process serves anyone but you.
+Extend
+------
+Replace this module with a real helper, or stop passing build() into
+assemble() from app/agents/main/agent.py.
+This agent does not know your product.
 """
 
 from agno.agent import Agent
@@ -13,14 +15,13 @@ NAME = "AgentBuilder"
 
 
 def build() -> Agent:
-    # MUST CHANGE BEFORE PRODUCTION.
     return Agent(
         name=NAME,
-        description="Placeholder. Replace this specialist before production.",
+        description="Sample specialist. Replace this module with a real helper.",
         model=model(),
         instructions=(
-            "You are a placeholder specialist. "
-            "Tell the coordinator this agent must be replaced before production. "
+            "You are a sample specialist. "
+            "Tell the coordinator this agent does not know the product. "
             "Do not invent product facts."
         ),
         telemetry=False,

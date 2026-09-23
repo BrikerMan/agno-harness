@@ -17,19 +17,20 @@ DATA = ROOT / "data"
 KNOWLEDGE = DATA / "knowledge"
 SEED_KNOWLEDGE = ROOT / "app" / "knowledge"
 AGENT_DB = DATA / "agent.db"
-SESSIONS_DB = DATA / "sessions.db"
 
 _MARKDOWN = {".md", ".markdown"}
 
 
 def ensure_data() -> None:
-    """Create the database files and the markdown knowledge directory."""
+    """Create the database file and the markdown knowledge directory.
+
+    Agent history and channel sessions share ``data/agent.db``.
+    """
     KNOWLEDGE.mkdir(parents=True, exist_ok=True)
     _copy_missing_seeds()
-    for path in (AGENT_DB, SESSIONS_DB):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if not path.exists():
-            sqlite3.connect(path).close()
+    AGENT_DB.parent.mkdir(parents=True, exist_ok=True)
+    if not AGENT_DB.exists():
+        sqlite3.connect(AGENT_DB).close()
 
 
 def _copy_missing_seeds() -> None:

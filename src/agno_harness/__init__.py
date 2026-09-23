@@ -5,6 +5,7 @@ from typing import Any
 from .app import RelayApp
 from .channels import (
     TEAMS_MESSAGES_PATH,
+    WEB_AGUI_PATH,
     BaseChannel,
     CLIChannel,
     LarkChannel,
@@ -163,6 +164,7 @@ from .tools import (
     STATE_TO_MARKER,
     TODO_MARKERS,
     ArtifactCard,
+    ExaTools,
     PresentationDeck,
     SerperTools,
     SlideProgressItem,
@@ -309,6 +311,7 @@ __all__ = [
     "save_env_file",
     "setup_relay_logging",
     "SequencerMode",
+    "ExaTools",
     "SerperTools",
     "SessionManager",
     "SessionRecord",
@@ -336,6 +339,7 @@ __all__ = [
     "SubAgentToolkit",
     "SubStream",
     "TEAMS_MESSAGES_PATH",
+    "WEB_AGUI_PATH",
     "TeamsAuthError",
     "TeamsBotAdapter",
     "TeamsChannel",

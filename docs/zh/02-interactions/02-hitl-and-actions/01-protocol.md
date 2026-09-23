@@ -51,7 +51,7 @@ async def deploy_service(environment: str) -> str: ...
 
 ## 同一种恢复
 
-再 `POST /agui`，messages **末尾** `role: tool`（`detect_resume` 只认 trailing）。不要新开 user 气泡。答案走 Agno AG-UI resume，不是 Python 里的 `requirement.confirm()`。
+再 `POST /api/v1/channels/web/agui`，messages **末尾** `role: tool`（`detect_resume` 只认 trailing）。不要新开 user 气泡。答案走 Agno AG-UI resume，不是 Python 里的 `requirement.confirm()`。
 
 | `pauseType` | 答案 `content` |
 | --- | --- |

@@ -46,7 +46,7 @@ def parse_sse(body: str) -> list[dict]:
 
 def post_run(client, **kwargs):
     payload = make_input(**kwargs).model_dump(by_alias=True, mode="json")
-    return client.post("/agui", json=payload)
+    return client.post("/api/v1/channels/web/agui", json=payload)
 
 
 class TestSSE:
@@ -72,13 +72,13 @@ class TestSSE:
 
     def test_a_malformed_body_is_rejected(self):
         client, _ = make_client()
-        assert client.post("/agui", json={"nonsense": True}).status_code == 422
+        assert client.post("/api/v1/channels/web/agui", json={"nonsense": True}).status_code == 422
 
 
 class TestDebugMode:
     def test_debug_appends_a_summary_frame(self):
         client, _ = make_client()
-        events = parse_sse(client.post("/agui?debug=1", json=_payload()).text)
+        events = parse_sse(client.post("/api/v1/channels/web/agui?debug=1", json=_payload()).text)
         assert events[-1]["type"] == "CUSTOM"
         assert events[-1]["name"] == EVENT_DEBUG_SUMMARY
         summary = events[-1]["value"]
@@ -88,7 +88,7 @@ class TestDebugMode:
 
     def test_the_summary_comes_after_the_terminal_event(self):
         client, _ = make_client()
-        events = parse_sse(client.post("/agui?debug=1", json=_payload()).text)
+        events = parse_sse(client.post("/api/v1/channels/web/agui?debug=1", json=_payload()).text)
         assert events[-2]["type"] == "RUN_FINISHED"
 
     def test_without_debug_the_stream_is_unchanged(self):
@@ -98,7 +98,7 @@ class TestDebugMode:
 
     def test_the_summary_reports_protocol_repairs(self):
         client, _ = make_client([tool_started("c1", "f"), run_completed()])
-        events = parse_sse(client.post("/agui?debug=1", json=_payload()).text)
+        events = parse_sse(client.post("/api/v1/channels/web/agui?debug=1", json=_payload()).text)
         rules = [v["rule"] for v in events[-1]["value"]["violations"]]
         assert "empty_text_message" in rules
 
@@ -111,21 +111,21 @@ class TestHistoryRoutes:
         return client
 
     def test_threads_are_listed(self, client):
-        threads = client.get("/threads").json()
+        threads = client.get("/api/v1/threads").json()
         assert [t["threadId"] for t in threads] == ["t1"]
         assert threads[0]["title"] == "hello"
 
     def test_messages_are_replayed(self, client):
-        messages = client.get("/threads/t1/messages").json()
+        messages = client.get("/api/v1/threads/t1/messages").json()
         assert [m["role"] for m in messages] == ["user", "assistant"]
         assert messages[1]["content"] == "Hi there."
 
     def test_an_unknown_thread_is_a_404(self, client):
-        assert client.get("/threads/nope/messages").status_code == 404
+        assert client.get("/api/v1/threads/nope/messages").status_code == 404
 
     def test_a_thread_can_be_deleted(self, client):
-        assert client.delete("/threads/t1").json()["ok"] is True
-        assert client.get("/threads").json() == []
+        assert client.delete("/api/v1/threads/t1").json()["ok"] is True
+        assert client.get("/api/v1/threads").json() == []
 
 
 class TestDebugRoutes:
@@ -137,12 +137,12 @@ class TestDebugRoutes:
 
     def test_debug_routes_are_off_unless_asked_for(self):
         client, _ = make_client()
-        assert client.get("/debug/chunks").status_code == 404
+        assert client.get("/api/v1/debug/chunks").status_code == 404
 
     def test_chunk_samples_are_exposed(self):
         client, _ = self.debug_client()
         post_run(client)
-        payload = client.get("/debug/chunks").json()
+        payload = client.get("/api/v1/debug/chunks").json()
         by_type = {t["eventType"]: t for t in payload["types"]}
         # The completion chunk is sampled too -- knowing its shape matters just
         # as much as knowing a content chunk's.
@@ -152,16 +152,16 @@ class TestDebugRoutes:
     def test_the_stream_state_of_a_run_is_exposed(self):
         client, _ = self.debug_client()
         post_run(client)
-        assert client.get("/debug/state/run-1").json()["runId"] == "run-1"
+        assert client.get("/api/v1/debug/state/run-1").json()["runId"] == "run-1"
 
     def test_an_unknown_run_is_a_404(self):
         client, _ = self.debug_client()
-        assert client.get("/debug/state/nope").status_code == 404
+        assert client.get("/api/v1/debug/state/nope").status_code == 404
 
     def test_violations_are_exposed(self):
         client, _ = self.debug_client([tool_started("c1", "f"), run_completed()])
         post_run(client)
-        payload = client.get("/debug/violations").json()
+        payload = client.get("/api/v1/debug/violations").json()
         assert payload["mode"] == "audit"
         assert "empty_text_message" in [v["rule"] for v in payload["violations"]]
 
@@ -169,7 +169,7 @@ class TestDebugRoutes:
         """The per-run view is what stays correct when runs overlap."""
         client, _ = self.debug_client([tool_started("c1", "f"), run_completed()])
         post_run(client)
-        report = client.get("/debug/runs/run-1").json()
+        report = client.get("/api/v1/debug/runs/run-1").json()
         assert report["runId"] == "run-1"
         assert report["streamState"]["runId"] == "run-1"
         assert "empty_text_message" in [v["rule"] for v in report["violations"]]
@@ -177,7 +177,7 @@ class TestDebugRoutes:
 
     def test_an_unknown_run_report_is_a_404(self):
         client, _ = self.debug_client()
-        assert client.get("/debug/runs/nope").status_code == 404
+        assert client.get("/api/v1/debug/runs/nope").status_code == 404
 
 
 class TestLongRunRoutes:
@@ -199,13 +199,13 @@ class TestLongRunRoutes:
     def test_the_routes_do_not_exist_without_a_manager(self):
         """A 404 on the route beats a 500 halfway through a stream."""
         client, _ = make_client()
-        assert client.get("/runs/run-1/attach").status_code == 404
-        assert client.get("/runs/run-1/stream").status_code == 404
-        assert client.post("/runs/run-1/abort").status_code == 404
+        assert client.get("/api/v1/runs/run-1/attach").status_code == 404
+        assert client.get("/api/v1/runs/run-1/stream").status_code == 404
+        assert client.post("/api/v1/runs/run-1/abort").status_code == 404
 
     def test_a_detached_run_streams_the_same_events_back(self):
         client, _ = self.long_run_client()
-        events = parse_sse(client.post("/agui?detach=1", json=_payload()).text)
+        events = parse_sse(client.post("/api/v1/channels/web/agui?detach=1", json=_payload()).text)
         assert [e["type"] for e in events] == [
             "RUN_STARTED",
             "TEXT_MESSAGE_START",
@@ -217,7 +217,7 @@ class TestLongRunRoutes:
     def test_frames_carry_their_offset_as_the_sse_id(self):
         """Which is what lets EventSource resume without any client bookkeeping."""
         client, _ = self.long_run_client()
-        body = client.post("/agui?detach=1", json=_payload()).text
+        body = client.post("/api/v1/channels/web/agui?detach=1", json=_payload()).text
         ids = [line[len("id: ") :] for line in body.splitlines() if line.startswith("id: ")]
         assert len(ids) == 5
         assert len(set(ids)) == 5
@@ -225,25 +225,25 @@ class TestLongRunRoutes:
     def test_a_run_can_be_replayed_from_the_beginning(self):
         """The fresh-page-load case: no cursor, the whole run."""
         client, _ = self.long_run_client()
-        client.post("/agui?detach=1", json=_payload())
+        client.post("/api/v1/channels/web/agui?detach=1", json=_payload())
 
-        events = parse_sse(client.get("/runs/run-1/attach").text)
+        events = parse_sse(client.get("/api/v1/runs/run-1/attach").text)
         assert events[0]["type"] == "RUN_STARTED"
         assert events[-1]["type"] == "RUN_FINISHED"
 
     def test_deprecated_stream_alias_still_attaches(self):
         client, _ = self.long_run_client()
-        client.post("/agui?detach=1", json=_payload())
-        events = parse_sse(client.get("/runs/run-1/stream").text)
+        client.post("/api/v1/channels/web/agui?detach=1", json=_payload())
+        events = parse_sse(client.get("/api/v1/runs/run-1/stream").text)
         assert events[0]["type"] == "RUN_STARTED"
         assert events[-1]["type"] == "RUN_FINISHED"
 
     def test_a_run_can_be_resumed_from_an_offset(self):
         client, _ = self.long_run_client()
-        body = client.post("/agui?detach=1", json=_payload()).text
+        body = client.post("/api/v1/channels/web/agui?detach=1", json=_payload()).text
         second = [line[len("id: ") :] for line in body.splitlines() if line.startswith("id: ")][1]
 
-        events = parse_sse(client.get(f"/runs/run-1/attach?after={second}").text)
+        events = parse_sse(client.get(f"/api/v1/runs/run-1/attach?after={second}").text)
         assert [e["type"] for e in events] == [
             "TEXT_MESSAGE_CONTENT",
             "TEXT_MESSAGE_END",
@@ -253,15 +253,15 @@ class TestLongRunRoutes:
     def test_last_event_id_is_honoured_like_an_after_cursor(self):
         """A browser sends it automatically; ignoring it would replay the run."""
         client, _ = self.long_run_client()
-        body = client.post("/agui?detach=1", json=_payload()).text
+        body = client.post("/api/v1/channels/web/agui?detach=1", json=_payload()).text
         last = [line[len("id: ") :] for line in body.splitlines() if line.startswith("id: ")][-1]
 
-        events = parse_sse(client.get("/runs/run-1/attach", headers={"Last-Event-ID": last}).text)
+        events = parse_sse(client.get("/api/v1/runs/run-1/attach", headers={"Last-Event-ID": last}).text)
         assert events == []
 
     def test_the_resume_mode_is_advertised(self):
         client, _ = self.long_run_client()
-        response = client.post("/agui?detach=1", json=_payload())
+        response = client.post("/api/v1/channels/web/agui?detach=1", json=_payload())
         assert response.headers[RESUME_HEADER] == "live"
 
     def test_a_runtime_without_long_runs_says_so(self):
@@ -270,7 +270,7 @@ class TestLongRunRoutes:
 
     def test_health_is_opt_in_and_advertises_resume_mode(self):
         client, _ = make_client()
-        assert client.get("/health").status_code == 404
+        assert client.get("/api/v1/health").status_code == 404
 
         log = InMemoryRunEventLog()
         runtime = AgentRuntime(
@@ -287,19 +287,19 @@ class TestLongRunRoutes:
                 allow_anonymous=True,
             )
         )
-        body = TestClient(app).get("/health").json()
+        body = TestClient(app).get("/api/v1/health").json()
         assert body["status"] == "healthy"
         assert body["resumeMode"] == "live"
 
     def test_active_runs_are_listed(self):
         client, _ = self.long_run_client()
-        client.post("/agui?detach=1", json=_payload())
-        assert client.get("/threads/thread-1/active").json() == []
+        client.post("/api/v1/channels/web/agui?detach=1", json=_payload())
+        assert client.get("/api/v1/threads/thread-1/active").json() == []
 
     def test_long_run_query_parameters_work(self):
         client, _ = self.long_run_client()
         # ?long-run=1
-        r1 = client.post("/agui?long-run=1", json=_payload())
+        r1 = client.post("/api/v1/channels/web/agui?long-run=1", json=_payload())
         assert r1.status_code == 200
         events1 = parse_sse(r1.text)
         assert events1[0]["type"] == "RUN_STARTED"
@@ -307,7 +307,7 @@ class TestLongRunRoutes:
 
         # ?long_run=1
         payload2 = make_input(text="world", run_id="run-2").model_dump(by_alias=True, mode="json")
-        r2 = client.post("/agui?long_run=1", json=payload2)
+        r2 = client.post("/api/v1/channels/web/agui?long_run=1", json=payload2)
         assert r2.status_code == 200
         events2 = parse_sse(r2.text)
         assert events2[0]["type"] == "RUN_STARTED"
@@ -325,15 +325,15 @@ class TestLongRunRoutes:
 
         asyncio.run(log.start_run("q-1", "t-1", input="what is quantum computing?"))
 
-        active = client.get("/threads/t-1/active").json()
+        active = client.get("/api/v1/threads/t-1/active").json()
         assert len(active) == 1
         assert active[0]["runId"] == "q-1"
         assert active[0]["input"] == "what is quantum computing?"
 
     def test_aborting_a_finished_run_reports_nothing_to_do(self):
         client, _ = self.long_run_client()
-        client.post("/agui?detach=1", json=_payload())
-        assert client.post("/runs/run-1/abort").json() == {"aborted": False}
+        client.post("/api/v1/channels/web/agui?detach=1", json=_payload())
+        assert client.post("/api/v1/runs/run-1/abort").json() == {"aborted": False}
 
     def test_another_users_run_is_a_404_and_not_a_403(self):
         """403 would confirm the run exists, which is more than a stranger knew."""
@@ -347,8 +347,8 @@ class TestLongRunRoutes:
         )
         client = TestClient(app)
 
-        client.post("/agui?detach=1", json=_payload())
-        assert client.post("/runs/run-1/abort").status_code == 404
+        client.post("/api/v1/channels/web/agui?detach=1", json=_payload())
+        assert client.post("/api/v1/runs/run-1/abort").status_code == 404
 
 
 class TestDetachedStreaming:
@@ -375,7 +375,7 @@ class TestDetachedStreaming:
 
         with TestClient(app) as client:
             response = client.post(
-                "/agui?detach=1", json=make_input().model_dump(by_alias=True, mode="json")
+                "/api/v1/channels/web/agui?detach=1", json=make_input().model_dump(by_alias=True, mode="json")
             )
             events = parse_sse(response.text)
 
@@ -392,7 +392,7 @@ class TestDetachedStreaming:
 
         with TestClient(app) as client:
             body = client.post(
-                "/agui?detach=1", json=make_input().model_dump(by_alias=True, mode="json")
+                "/api/v1/channels/web/agui?detach=1", json=make_input().model_dump(by_alias=True, mode="json")
             ).text
 
         ids = [line[3:].strip() for line in body.splitlines() if line.startswith("id:")]
@@ -403,7 +403,7 @@ class TestFramesRoute:
     def test_without_a_log_the_route_explains_itself(self):
         """501 with a reason, not an empty list that reads as "nothing happened"."""
         client, _ = make_client()
-        response = client.get("/threads/t1/frames")
+        response = client.get("/api/v1/threads/t1/frames")
         assert response.status_code == 501
         assert (
             "RunEventLog" in response.json()["error"]
@@ -416,7 +416,7 @@ class TestFramesRoute:
         )
         app = FastAPI()
         app.include_router(make_agui_router(runtime))
-        response = TestClient(app).get("/threads/t1/frames")
+        response = TestClient(app).get("/api/v1/threads/t1/frames")
         assert response.status_code == 200
         assert response.json() == {"frames": []}
 
@@ -440,8 +440,8 @@ class TestProtocolVersion:
 class TestConfiguration:
     def test_a_prefix_is_applied(self):
         client, _ = make_client(prefix="/api")
-        assert client.post("/api/agui", json=_payload()).status_code == 200
-        assert client.post("/agui", json=_payload()).status_code == 404
+        assert client.post("/api/api/v1/channels/web/agui", json=_payload()).status_code == 200
+        assert client.post("/api/v1/channels/web/agui", json=_payload()).status_code == 404
 
     def test_the_user_id_is_resolved_server_side(self):
         runtime = AgentRuntime(agent=FakeAgent([run_completed()]))
@@ -449,7 +449,7 @@ class TestConfiguration:
         app.include_router(
             make_agui_router(runtime, resolve_user_id=lambda request: "user-from-header")
         )
-        TestClient(app).post("/agui", json=_payload())
+        TestClient(app).post("/api/v1/channels/web/agui", json=_payload())
         assert runtime.agent.last_kwargs["user_id"] == "user-from-header"
 
 

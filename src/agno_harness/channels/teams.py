@@ -1,8 +1,8 @@
 """Microsoft Teams channel: Bot Framework webhook in, Bot Connector reply out.
 
 ``TeamsChannel()`` reads ``AGNO_HARNESS_TEAMS_APP_ID`` / ``AGNO_HARNESS_TEAMS_APP_PASSWORD``.
-The webhook is ``POST /api/messages`` (a router ``prefix`` is prepended). Inbound
-activities are JWT-verified. Replies use the activity's ``serviceUrl`` and a
+The webhook is ``POST /api/v1/channels/teams/messages`` (a router ``prefix`` is prepended).
+Inbound activities are JWT-verified. Replies use the activity's ``serviceUrl`` and a
 client-credentials token. Missing credentials or a missing conversation reference
 raise; they never return a fake activity id.
 """
@@ -10,6 +10,7 @@ raise; they never return a fake activity id.
 import logging
 from typing import Any, Protocol, runtime_checkable
 
+from ..api_paths import CHANNELS_PATH
 from ..config import RelayConfig
 from ..core.attachment import InboundAttachment
 from ..core.channel import ChannelEvent, OutboundMessage
@@ -33,7 +34,7 @@ from .teams_connector import (
 
 log = logging.getLogger("agno_harness.channels.teams")
 
-TEAMS_MESSAGES_PATH = "/api/messages"
+TEAMS_MESSAGES_PATH = f"{CHANNELS_PATH}/teams/messages"
 
 _DEFAULT_POLICY: Any = object()
 _HANDLED_ACTIVITY_TYPES = frozenset({"message", "invoke"})
@@ -42,9 +43,9 @@ _HANDLED_ACTIVITY_TYPES = frozenset({"message", "invoke"})
 def teams_messaging_endpoint(public_base: str = "https://<your-domain>", prefix: str = "") -> str:
     """Absolute Messaging endpoint for Azure Bot configuration.
 
-    The channel route is always ``/api/messages``. ``prefix`` is the prefix passed
-    to ``relay.get_router(prefix=...)``. With no prefix the endpoint is
-    ``https://host/api/messages``.
+    The channel route is always ``/api/v1/channels/teams/messages``. ``prefix`` is
+    the prefix passed to ``relay.get_router(prefix=...)``. With no prefix the
+    endpoint is ``https://host/api/v1/channels/teams/messages``.
     """
     base = public_base.rstrip("/")
     pre = prefix.strip()
@@ -103,6 +104,18 @@ def _account(account_id: str | None, name: str | None) -> dict[str, str] | None:
     if name:
         account["name"] = name
     return account
+
+
+def _as_adaptive_card(card: dict[str, Any]) -> dict[str, Any]:
+    """Return an Adaptive Card document. Fragments become the card body."""
+    if card.get("type") == "AdaptiveCard":
+        return card
+    return {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [card],
+    }
 
 
 def conversation_ref_from_activity(activity: dict[str, Any]) -> TeamsConversationRef:
@@ -215,13 +228,17 @@ class TeamsBotAdapter:
         if text:
             activity["text"] = text
             activity["textFormat"] = "markdown"
-        if ref.activity_id:
+        # Teams draws an empty card shell when an Adaptive Card is posted as a
+        # reply (POST .../activities/{activityId}) in a personal chat. The text
+        # still shows. Cards go out as a new conversation activity.
+        reply = bool(ref.activity_id) and not attachments
+        if reply:
             activity["replyToId"] = ref.activity_id
         if attachments:
             activity["attachments"] = attachments
         if not text and not attachments:
             raise TeamsDeliveryError("refusing to post an empty Teams activity")
-        return await self.connector.post_activity(ref, activity, reply=bool(ref.activity_id))
+        return await self.connector.post_activity(ref, activity, reply=reply)
 
     async def send_typing(self, destination: ConversationKey) -> None:
         ref = self.ref_for(destination.chat_id)
@@ -312,7 +329,7 @@ class TeamsChannel(BaseChannel):
             )
 
     def get_router(self) -> Any:
-        """FastAPI router. The webhook path is ``POST /api/messages``."""
+        """FastAPI router. The webhook path is ``POST /api/v1/channels/teams/messages``."""
         if self._router is not None:
             return self._router
 
@@ -475,14 +492,18 @@ class TeamsChannel(BaseChannel):
         await self.bot.send_typing(destination)
 
     def build_attachments(self, message: OutboundMessage) -> list[Any]:
-        """Wrap Adaptive Card dicts. Non-dict cards are left for the text body."""
+        """Wrap card dicts as Adaptive Card attachments.
+
+        A fragment such as a Container is not a valid card document. Teams
+        accepts it and then paints an empty shell, so those are wrapped first.
+        """
         attachments: list[Any] = []
         for card in message.cards:
             if isinstance(card, dict):
                 attachments.append(
                     {
                         "contentType": "application/vnd.microsoft.card.adaptive",
-                        "content": card,
+                        "content": _as_adaptive_card(card),
                     }
                 )
         return attachments

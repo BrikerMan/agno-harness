@@ -107,7 +107,7 @@ class TestIdentityComesFromTheServer:
         payload = make_input().model_dump(by_alias=True, mode="json")
         payload["userId"] = "administrator"
 
-        as_user(client, "alice").post("/agui", json=payload)
+        as_user(client, "alice").post("/api/v1/channels/web/agui", json=payload)
 
         assert runtime.agent.last_kwargs["user_id"] == "alice"
 
@@ -164,7 +164,7 @@ class TestRunIsolation:
     def test_someone_elses_run_cannot_be_aborted(self, wired):
         client, _ = wired
         payload = make_input().model_dump(by_alias=True, mode="json")
-        as_user(client, "alice").post("/agui?detach=1", json=payload)
+        as_user(client, "alice").post("/api/v1/channels/web/agui?detach=1", json=payload)
 
         assert as_user(client, "bob").post("/runs/run-1/abort").status_code == 404
 
@@ -175,7 +175,7 @@ class TestRunIsolation:
     def test_someone_elses_active_runs_are_invisible(self, wired):
         client, _ = wired
         payload = make_input().model_dump(by_alias=True, mode="json")
-        as_user(client, "alice").post("/agui?detach=1", json=payload)
+        as_user(client, "alice").post("/api/v1/channels/web/agui?detach=1", json=payload)
 
         assert as_user(client, "bob").get("/threads/thread-1/active").json() == []
 

@@ -51,7 +51,7 @@ Only `user_input` / `user_feedback` carry `userInputSchema`. Build the form from
 
 ## One resume shape
 
-`POST /agui` again with a trailing `role: tool` (`detect_resume` only looks at the tail). Do not open a new user bubble. The answer is Agno AG-UI resume, not `requirement.confirm()` in Python.
+`POST /api/v1/channels/web/agui` again with a trailing `role: tool` (`detect_resume` only looks at the tail). Do not open a new user bubble. The answer is Agno AG-UI resume, not `requirement.confirm()` in Python.
 
 | `pauseType` | Answer `content` |
 | --- | --- |

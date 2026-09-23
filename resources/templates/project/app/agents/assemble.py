@@ -30,6 +30,9 @@ def assemble(
 ) -> Agent:
     extra_tools: list = []
     text = instructions_path.read_text(encoding="utf-8").strip()
+    card_prompt = catalog.to_prompt() if catalog is not None else ""
+    if card_prompt:
+        text = f"{text}\n\n{card_prompt}"
     if skills_dir.is_dir():
         manager = SkillManager(catalog=catalog, sources=[skills_dir], strict=True)
         extra_tools.append(manager.create_load_skill_tool())

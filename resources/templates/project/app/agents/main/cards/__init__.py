@@ -8,6 +8,8 @@ A skill that names an unknown schema fails at startup.
 """
 
 from agno_harness import CardCatalog
+from app.agents.main.cards.code import CodeCard
+from app.agents.main.cards.event import EventCard
 from app.agents.main.cards.note import NoteCard
 
-CARD_CATALOG = CardCatalog([NoteCard])
+CARD_CATALOG = CardCatalog([NoteCard, CodeCard, EventCard])
