@@ -12,19 +12,122 @@ Inside harness stores there is a second split:
 - **Hot log** (`RedisRunEventLog`, or an in-process stand-in) — every AG-UI delta, a blocking tail, TTL. `?long-run=1` and `GET /api/v1/runs/{id}/attach` read it. Do not store tokens in SQL.
 - **History archive** (SQL) — the folded event list after the run. Consecutive content deltas become one frame. `GET /api/v1/threads/{id}/frames` reads it.
 
-The base does not create tables. Mix the mixins onto your `Base` and run `create_all` / Alembic yourself.
+---
+
+## Architecture: Dual-Database Setup
+
+Agno native database and Harness database have clear boundaries:
+
+### 1. Database Definition (`base.py`)
 
 ```python
-from agno_harness.stores import (
-    DefaultRelayBase,
-    RunArchiveMixin,
-    RunFrameMixin,
-    RunRecordMixin,
-    SessionRecordMixin,
-    Stores,
-    SQLAlchemyActionStore,
+from agno.db.sqlite import SqliteDb
+from agno_harness.db import AgnoHarnessSqliteDb
+
+# 1. Agno DB (model conversation context)
+agno_db = SqliteDb(db_file="data/agent.db")
+
+# 2. Harness DB (UI event stream, interactive cards, audit log, sessions)
+agno_harness_db = AgnoHarnessSqliteDb(db_file="data/agent.db", prefix="ipv")
+```
+
+For PostgreSQL:
+```python
+from agno.db.async_postgres import AsyncPostgresDb
+from agno_harness.db import AgnoHarnessPostgresDb
+
+# Standalone URL mode
+agno_harness_db = AgnoHarnessPostgresDb(db_url=settings.database_url, prefix="ipv")
+
+# Or reuse an existing SQLAlchemy async_session_factory
+agno_harness_db = AgnoHarnessPostgresDb.from_session_factory(
+    db.async_session_factory,
+    prefix="ipv",
 )
 ```
+
+### 2. Agent Binding (`agent.py`)
+
+The agent only cares about its Agno native DB:
+```python
+the_agent = Agent(
+    name="agent",
+    description="agent",
+    db=agno_db,
+)
+```
+
+### 3. Runtime Setup (`main.py` / `runtime_factory.py`)
+
+```python
+runtime = AgentRuntime(
+    agent=the_agent,
+    harness_db=agno_harness_db,
+    catalog=CARD_CATALOG,
+)
+```
+
+`AgentRuntime` automatically:
+1. Aligns `harness_db.prefix` to `agent.db`.
+2. Assembles and binds default SQL stores.
+3. Verifies or initializes the 7 core persistence tables.
+
+---
+
+## Two Initialization Modes
+
+### Mode A: Default Quickstart (Silent Auto-create with Warning)
+
+Best for local development, prototyping, and testing:
+- `auto_create=True` (default).
+- Automatically creates missing harness tables on startup.
+- Emits a warning log recommending migration tools for production:
+  > `[agno-harness] ⚠️ Initialized harness tables automatically for prefix 'ipv'. For production environments, it is recommended to manage schema versions via AlembicMigrator.declare_models(Base).`
+- If an `alembic_version` table is detected, auto-create is skipped automatically to avoid generating empty autogenerate diffs.
+
+### Mode B: Enterprise Alembic Migrations
+
+For production deployments or existing Alembic repositories:
+
+```python
+# app/models/__init__.py (imported by alembic/env.py)
+from agno_harness.db import AlembicMigrator
+from app.models.base import Base
+
+# Single agent
+AlembicMigrator.declare_models(base=Base, prefix="ipv")
+
+# Multiple agents sharing one database
+AlembicMigrator.declare_models(base=Base, prefix="admin")
+```
+
+Run standard migrations:
+```bash
+alembic revision --autogenerate -m "add harness tables"
+alembic upgrade head
+```
+
+In production, configure `auto_create=False` on `AgnoHarnessDb`. If any table is missing, startup raises `MissingHarnessTablesError` with actionable instructions.
+
+---
+
+## Table Prefix and Multi-Agent Isolation
+
+Prefixes support letters, numbers, underscores `_`, and hyphens `-` (e.g. `ipv` or `ipv_agent`).
+Prefixes containing underscores use underscore separators (e.g. `ipv_conversation_sessions`), aligning with PostgreSQL conventions.
+
+The 7 persistence tables:
+1. `conversation_sessions`
+2. `actions`
+3. `message_audits`
+4. `custom_events`
+5. `run_frames`
+6. `run_records`
+7. `run_archives`
+
+---
+
+## Streams and Resumes (`X-Agui-Resume`)
 
 On `Stores`, `event_log` and `event_stream` are separate: SQL log alone is history; add Redis for live. `resume_mode` is derived from that.
 

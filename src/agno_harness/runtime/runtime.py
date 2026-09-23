@@ -41,7 +41,7 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from ag_ui.core import BaseEvent, RunAgentInput
+from ag_ui.core import BaseEvent, EventType, RunAgentInput
 from ag_ui.encoder import EventEncoder
 from agno.os.interfaces.agui.input import validate_state
 from agno.os.interfaces.agui.state import StreamState
@@ -52,6 +52,7 @@ from ..core.prompt import UserQueryBuilder, default_builder
 from ..core.sequencer import ProtocolViolation, SequencerMode
 from ..core.streamui import CardCatalog
 from ..core.types import ToolFilter
+from ..stores.prefix import apply_table_prefix
 from ..stores.registry import Stores
 from .closure import seal_session_run
 from .hitl import detect_resume, resume_result_events
@@ -68,6 +69,7 @@ from .scope import RunScope
 from .state import StateTracker
 from .storage_guard import check_history_pairing
 from .threads import ThreadService
+from .titles import EVENT_THREAD_TITLE
 from .titles import generate_thread_title as _generate_thread_title
 from .tracing import RunTracer
 from .translator import EVENT_RUN_CANCELLED, EVENT_RUN_PAUSED, AgentRunFailed, EventTranslator
@@ -128,6 +130,7 @@ class AgentRuntime:
         agent: Any,
         db: Any = None,
         *,
+        harness_db: Any = None,
         stores: Stores | None = None,
         allow_ephemeral_agno_db: bool = False,
         catalog: CardCatalog | None = None,
@@ -145,6 +148,18 @@ class AgentRuntime:
     ) -> None:
         self.agent = agent
         self.db = db if db is not None else getattr(agent, "db", None)
+        self.harness_db = harness_db
+
+        if self.harness_db is not None:
+            prefix = getattr(self.harness_db, "prefix", None)
+            if self.db is not None and prefix:
+                apply_table_prefix(self.db, prefix=prefix)
+            if hasattr(agent, "db") and agent.db is not None and agent.db is not self.db and prefix:
+                apply_table_prefix(agent.db, prefix=prefix)
+
+            if stores is None and hasattr(self.harness_db, "build_stores"):
+                stores = self.harness_db.build_stores()
+
         self.stores = stores or Stores()
         check_history_pairing(self.db, self.stores, allow_ephemeral_agno_db=allow_ephemeral_agno_db)
         self.catalog = catalog
@@ -326,6 +341,17 @@ class AgentRuntime:
 
         error: BaseException | None = None
         disconnected = False
+        is_paused = False
+
+        if getattr(self.stores, "threads", None) is not None:
+            with contextlib.suppress(Exception):
+                prompt = last_user_text(run_input)
+                await self.stores.threads.start_turn(
+                    thread_id=scope.thread_id,
+                    user_id=scope.user_id,
+                    run_id=scope.run_id,
+                    title=prompt[:40] if prompt else None,
+                )
 
         try:
             async for event in translator.start():
@@ -350,6 +376,28 @@ class AgentRuntime:
                         yield out
 
             async for event in self._pump(translator, scope, run_input, request):
+                if (
+                    event.type is EventType.CUSTOM
+                    and getattr(event, "name", "") == EVENT_RUN_PAUSED
+                ):
+                    is_paused = True
+                    if getattr(self.stores, "threads", None) is not None:
+                        with contextlib.suppress(Exception):
+                            await self.stores.threads.set_paused(
+                                scope.thread_id, is_paused=True, run_id=scope.run_id
+                            )
+                elif (
+                    event.type is EventType.CUSTOM
+                    and getattr(event, "name", "") == EVENT_THREAD_TITLE
+                ):
+                    val = getattr(event, "value", None)
+                    if (
+                        isinstance(val, dict)
+                        and val.get("title")
+                        and getattr(self.stores, "threads", None) is not None
+                    ):
+                        with contextlib.suppress(Exception):
+                            await self.stores.threads.set_title(scope.thread_id, val["title"])
                 yield event
 
         except _Disconnected:
@@ -363,6 +411,13 @@ class AgentRuntime:
         target_db = self.db or getattr(self.agent, "db", None)
 
         if disconnected:
+            if getattr(self.stores, "threads", None) is not None:
+                with contextlib.suppress(Exception):
+                    await self.stores.threads.set_cancelled(
+                        scope.thread_id,
+                        reason="Client disconnected / cancelled",
+                        run_id=scope.run_id,
+                    )
             # No terminal event: the client is gone, and a sequencer flush would
             # only produce frames nobody will read. The modules still get their
             # teardown — a frame nobody reads is pointless, but a module left
@@ -384,9 +439,26 @@ class AgentRuntime:
             return
 
         async for event in self._run_post_hooks(translator, scope, tracer, error):
+            if event.type is EventType.CUSTOM and getattr(event, "name", "") == EVENT_THREAD_TITLE:
+                val = getattr(event, "value", None)
+                if (
+                    isinstance(val, dict)
+                    and val.get("title")
+                    and getattr(self.stores, "threads", None) is not None
+                ):
+                    with contextlib.suppress(Exception):
+                        await self.stores.threads.set_title(scope.thread_id, val["title"])
             yield event
 
         if error is not None:
+            if getattr(self.stores, "threads", None) is not None:
+                with contextlib.suppress(Exception):
+                    await self.stores.threads.set_finished(
+                        scope.thread_id,
+                        is_error=True,
+                        error_reason=str(error),
+                        run_id=scope.run_id,
+                    )
             async for event in translator.fail(error):
                 yield event
             for event in translator.close():
@@ -402,6 +474,14 @@ class AgentRuntime:
                         partial_content=translator.accumulated_text or None,
                     )
             return
+
+        if not is_paused and getattr(self.stores, "threads", None) is not None:
+            with contextlib.suppress(Exception):
+                await self.stores.threads.set_finished(
+                    scope.thread_id,
+                    is_error=False,
+                    run_id=scope.run_id,
+                )
 
         async for event in translator.finish():
             yield event
@@ -468,6 +548,9 @@ class AgentRuntime:
         run_input: RunAgentInput,
         request: Any,
     ) -> AsyncIterator[BaseEvent]:
+        if self.harness_db is not None and hasattr(self.harness_db, "ensure_tables"):
+            await self.harness_db.ensure_tables()
+
         async for item in self.runner.run(run_input, scope):
             if request is not None and await _is_disconnected(request):
                 raise _Disconnected
@@ -482,13 +565,21 @@ class AgentRuntime:
         """Rebuild a thread's messages, or ``None`` if it is unknown to this user."""
         return await self.threads.replay_messages(thread_id, user_id=user_id)
 
+    async def get_thread(
+        self, thread_id: str, *, user_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get a single thread's metadata and status."""
+        return await self.threads.get_thread(thread_id, user_id=user_id)
+
     async def list_threads(self, *, user_id: str | None = None) -> list[dict[str, Any]]:
         """This user's threads, newest first, with a title and message count."""
         return await self.threads.list_threads(user_id=user_id)
 
-    async def delete_thread(self, thread_id: str, *, user_id: str | None = None) -> dict[str, Any]:
+    async def delete_thread(
+        self, thread_id: str, *, user_id: str | None = None, hard: bool = False
+    ) -> dict[str, Any]:
         """Delete a thread and the records the toolbox added alongside it."""
-        return await self.threads.delete_thread(thread_id, user_id=user_id)
+        return await self.threads.delete_thread(thread_id, user_id=user_id, hard=hard)
 
     async def generate_thread_title(
         self,
@@ -505,7 +596,7 @@ class AgentRuntime:
         ``None`` if the model is missing or the call failed. Does not run the
         agent — ``agent.arun()`` would pollute the session.
         """
-        return await _generate_thread_title(
+        title = await _generate_thread_title(
             agent=self.agent,
             db=self.db,
             thread_id=thread_id,
@@ -514,6 +605,10 @@ class AgentRuntime:
             user_text=user_text,
             completion_text=completion_text,
         )
+        if title and getattr(self.stores, "threads", None) is not None:
+            with contextlib.suppress(Exception):
+                await self.stores.threads.set_title(thread_id, title)
+        return title
 
     # ── introspection ─────────────────────────────────────────────────────
 

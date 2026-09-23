@@ -22,8 +22,10 @@ from .mixins import (
     RunFrameMixin,
     RunRecordMixin,
     SessionRecordMixin,
+    ThreadRecordMixin,
     record_to_dict,
 )
+from .prefix import DEFAULT_TABLE_PREFIX, apply_table_prefix, resolve_prefix, table_name
 from .registry import ResumeMode, StoreRegistry, Stores
 from .sql_log import SQLRunEventLog
 from .sql_models import (
@@ -31,6 +33,11 @@ from .sql_models import (
     get_or_create_action_model,
     get_or_create_audit_model,
     get_or_create_session_model,
+    get_or_create_thread_model,
+    harness_metadata,
+    include_harness,
+    numbered_revisions,
+    register_harness_models,
 )
 from .stores import (
     CustomEventStore,
@@ -39,6 +46,12 @@ from .stores import (
     InMemoryHistoryArchive,
     SQLAlchemyCustomEventStore,
     SQLAlchemyHistoryArchive,
+)
+from .thread_store import (
+    BaseThreadStore,
+    InMemoryThreadStore,
+    SQLAlchemyThreadStore,
+    thread_row_to_dict,
 )
 
 
@@ -52,14 +65,17 @@ def __getattr__(name: str):
 
 __all__ = [
     "ActionRecordMixin",
+    "BaseThreadStore",
     "CustomEventMixin",
     "CustomEventStore",
+    "DEFAULT_TABLE_PREFIX",
     "DefaultRelayBase",
     "HistoryArchive",
     "InMemoryActionStore",
     "InMemoryCustomEventStore",
     "InMemoryHistoryArchive",
     "InMemoryRunEventLog",
+    "InMemoryThreadStore",
     "MessageAuditMixin",
     "RedisRunEventLog",
     "ResumeMode",
@@ -69,12 +85,23 @@ __all__ = [
     "SQLAlchemyActionStore",
     "SQLAlchemyCustomEventStore",
     "SQLAlchemyHistoryArchive",
+    "SQLAlchemyThreadStore",
     "SQLRunEventLog",
     "SessionRecordMixin",
     "StoreRegistry",
     "Stores",
+    "ThreadRecordMixin",
+    "apply_table_prefix",
     "get_or_create_action_model",
     "get_or_create_audit_model",
     "get_or_create_session_model",
+    "get_or_create_thread_model",
+    "harness_metadata",
+    "include_harness",
+    "numbered_revisions",
     "record_to_dict",
+    "register_harness_models",
+    "resolve_prefix",
+    "table_name",
+    "thread_row_to_dict",
 ]

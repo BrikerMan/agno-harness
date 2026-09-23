@@ -10,9 +10,10 @@ Routes
 ``POST   /api/v1/channels/web/agui``          run the agent, stream AG-UI SSE
 ``GET    /api/v1/health``                     ``{status, resumeMode}`` when ``include_health=True``
 ``GET    /api/v1/threads``                    list threads, newest first
+``GET    /api/v1/threads/{id}``               get thread metadata and status
 ``GET    /api/v1/threads/{id}/messages``      replay a thread
 ``GET    /api/v1/threads/{id}/frames?after=`` replay a thread as stored frames
-``DELETE /api/v1/threads/{id}``               delete a thread
+``DELETE /api/v1/threads/{id}``               delete a thread (soft delete by default, ?hard=true for purge)
 ``GET    /api/v1/debug/chunks``               recorded raw Agno chunk shapes
 ``GET    /api/v1/debug/state/{run_id}``       translator state after a run
 ``GET    /api/v1/debug/violations``           protocol repairs from the last run
@@ -206,6 +207,13 @@ def make_agui_router(
     async def list_threads(request: Request) -> list[dict[str, Any]]:
         return await runtime.list_threads(user_id=_user(request))
 
+    @router.get(f"{THREADS_PATH}/{{thread_id}}", name="get_thread")
+    async def get_thread(request: Request, thread_id: str) -> Any:
+        thread = await runtime.get_thread(thread_id, user_id=_user(request))
+        if thread is None:
+            return JSONResponse(status_code=404, content={"error": "thread not found"})
+        return thread
+
     @router.get(f"{THREADS_PATH}/{{thread_id}}/messages", name="thread_messages")
     async def thread_messages(request: Request, thread_id: str) -> Any:
         messages = await runtime.replay_messages(thread_id, user_id=_user(request))
@@ -231,8 +239,12 @@ def make_agui_router(
         return {"frames": frames}
 
     @router.delete(f"{THREADS_PATH}/{{thread_id}}", name="delete_thread")
-    async def delete_thread(request: Request, thread_id: str) -> Any:
-        result = await runtime.delete_thread(thread_id, user_id=_user(request))
+    async def delete_thread(
+        request: Request,
+        thread_id: str,
+        hard: bool = Query(False, description="Whether to permanently hard-delete the thread"),
+    ) -> Any:
+        result = await runtime.delete_thread(thread_id, user_id=_user(request), hard=hard)
         if result.get("error") == "thread not found":
             return JSONResponse(status_code=404, content=result)
         return result

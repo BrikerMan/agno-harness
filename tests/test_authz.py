@@ -76,27 +76,31 @@ class TestThreadIsolation:
         return client
 
     def test_a_listing_shows_only_your_own_threads(self, client):
-        threads = as_user(client, "alice").get("/threads").json()
+        threads = as_user(client, "alice").get("/api/v1/threads").json()
         assert [t["threadId"] for t in threads] == ["alice-thread"]
 
     def test_someone_elses_thread_reads_as_missing(self, client):
-        assert as_user(client, "bob").get("/threads/alice-thread/messages").status_code == 404
+        assert (
+            as_user(client, "bob").get("/api/v1/threads/alice-thread/messages").status_code == 404
+        )
 
     def test_someone_elses_thread_cannot_be_deleted(self, client):
-        assert as_user(client, "bob").delete("/threads/alice-thread").status_code == 404
+        assert as_user(client, "bob").delete("/api/v1/threads/alice-thread").status_code == 404
 
     def test_a_failed_delete_leaves_the_thread_intact(self, client):
-        as_user(client, "bob").delete("/threads/alice-thread")
-        assert as_user(client, "alice").get("/threads/alice-thread/messages").status_code == 200
+        as_user(client, "bob").delete("/api/v1/threads/alice-thread")
+        assert (
+            as_user(client, "alice").get("/api/v1/threads/alice-thread/messages").status_code == 200
+        )
 
     def test_your_own_thread_still_works(self, client):
-        messages = as_user(client, "alice").get("/threads/alice-thread/messages").json()
+        messages = as_user(client, "alice").get("/api/v1/threads/alice-thread/messages").json()
         assert messages[0]["content"] == "alice's secret"
 
     def test_a_missing_thread_and_a_forbidden_one_answer_alike(self, client):
         """Distinguishing them would confirm which thread ids are real."""
-        forbidden = as_user(client, "bob").get("/threads/alice-thread/messages")
-        missing = as_user(client, "bob").get("/threads/no-such-thread/messages")
+        forbidden = as_user(client, "bob").get("/api/v1/threads/alice-thread/messages")
+        missing = as_user(client, "bob").get("/api/v1/threads/no-such-thread/messages")
         assert forbidden.status_code == missing.status_code == 404
         assert forbidden.json() == missing.json()
 
@@ -121,7 +125,7 @@ class TestIdentityComesFromTheServer:
         db = two_user_db()
         client, _ = make_app(db)
 
-        as_user(client, "alice").get("/threads")
+        as_user(client, "alice").get("/api/v1/threads")
 
         assert db.queried_user_ids == ["alice"]
 
@@ -134,7 +138,7 @@ class TestSingleUserMode:
         app.include_router(make_agui_router(runtime))
         client = TestClient(app)
 
-        assert len(client.get("/threads").json()) == 2
+        assert len(client.get("/api/v1/threads").json()) == 2
 
     def test_the_absence_of_authentication_is_announced(self, caplog):
         """So that "no auth" is a choice somebody made, not one they missed."""
@@ -166,18 +170,18 @@ class TestRunIsolation:
         payload = make_input().model_dump(by_alias=True, mode="json")
         as_user(client, "alice").post("/api/v1/channels/web/agui?detach=1", json=payload)
 
-        assert as_user(client, "bob").post("/runs/run-1/abort").status_code == 404
+        assert as_user(client, "bob").post("/api/v1/runs/run-1/abort").status_code == 404
 
     def test_an_unknown_run_answers_the_same_way(self, wired):
         client, _ = wired
-        assert as_user(client, "bob").post("/runs/nope/abort").json() == {"aborted": False}
+        assert as_user(client, "bob").post("/api/v1/runs/nope/abort").json() == {"aborted": False}
 
     def test_someone_elses_active_runs_are_invisible(self, wired):
         client, _ = wired
         payload = make_input().model_dump(by_alias=True, mode="json")
         as_user(client, "alice").post("/api/v1/channels/web/agui?detach=1", json=payload)
 
-        assert as_user(client, "bob").get("/threads/thread-1/active").json() == []
+        assert as_user(client, "bob").get("/api/v1/threads/thread-1/active").json() == []
 
 
 class TestServiceLevel:

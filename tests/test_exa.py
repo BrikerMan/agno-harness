@@ -35,7 +35,11 @@ class Recorder:
         method = body.get("method")
         if method == "initialize":
             return _payload(
-                {"jsonrpc": "2.0", "id": body.get("id"), "result": {"protocolVersion": "2024-11-05"}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": body.get("id"),
+                    "result": {"protocolVersion": "2024-11-05"},
+                },
                 session="sess-1",
             )
         if method == "notifications/initialized":

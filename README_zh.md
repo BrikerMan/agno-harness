@@ -5,7 +5,7 @@
 
 > **本地 Agent 能跑。一要发给客户，就不知道从哪下手。**
 
-[English Documentation](README.md) | [完整文档](docs/zh/README.md) | [协议规范 (SPEC.md)](SPEC.md) | [开发守则 (AGENTS.md)](AGENTS.md)
+[English Documentation](README.md) | [完整文档](docs/zh/README.md) | [更新日志](CHANGELOG.md) | [协议规范 (SPEC.md)](SPEC.md) | [开发守则 (AGENTS.md)](AGENTS.md)
 
 终端里聊得挺好。真要给同事、给客户、丢进飞书群，才发现缺的不是 prompt：谁在用、聊到哪了、两个人会不会串、出了错怎么翻、网页和群怎么接。
 

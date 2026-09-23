@@ -23,7 +23,7 @@ class SQLAlchemySink(BaseSink):
         session_factory: Any,
         *,
         model: type[Any] | None = None,
-        table_name: str = "agno_message_audits",
+        table_name: str | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.model = model or get_or_create_audit_model(table_name)

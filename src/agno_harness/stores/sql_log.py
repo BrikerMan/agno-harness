@@ -13,7 +13,6 @@ it and is still there after the process restarts.
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -23,6 +22,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..core.log import Frame, FrameKind, RunRecord, RunStatus, select_frames
+from .mixins import load_json, store_json
 
 
 class SQLRunEventLog:
@@ -71,7 +71,7 @@ class SQLRunEventLog:
                         run_id=run_id,
                         sequence=sequence,
                         kind=FrameKind.DELTA.value,
-                        event_json=json.dumps(event, ensure_ascii=False, default=str),
+                        event_json=store_json(dict(event)),
                     )
                 )
         return _offset(sequence)
@@ -89,7 +89,7 @@ class SQLRunEventLog:
             frames = [
                 Frame(
                     offset=_offset(row.sequence),
-                    event=json.loads(row.event_json),
+                    event=_event(row.event_json),
                     kind=FrameKind(row.kind),
                 )
                 for row in rows
@@ -109,7 +109,7 @@ class SQLRunEventLog:
                     run_id=run_id,
                     user_id=user_id,
                     status=RunStatus.RUNNING.value,
-                    meta_json=json.dumps(meta, ensure_ascii=False, default=str) if meta else None,
+                    meta_json=store_json(meta) if meta else None,
                 )
                 session.add(row)
                 await session.flush()
@@ -127,7 +127,7 @@ class SQLRunEventLog:
                 row.created_at = now
             if user_id is not None:
                 row.user_id = user_id
-            row.meta_json = json.dumps(meta, ensure_ascii=False, default=str) if meta else None
+            row.meta_json = store_json(meta) if meta else None
             await session.flush()
             return _to_record(row)
 
@@ -142,8 +142,9 @@ class SQLRunEventLog:
             if "unrecordable" in meta:
                 row.unrecordable = bool(meta.pop("unrecordable"))
             if meta:
-                merged = {**(json.loads(row.meta_json) if row.meta_json else {}), **meta}
-                row.meta_json = json.dumps(merged, ensure_ascii=False, default=str)
+                current = load_json(row.meta_json)
+                merged = {**(current if isinstance(current, dict) else {}), **meta}
+                row.meta_json = store_json(merged)
 
     async def get_run(self, run_id: str) -> RunRecord | None:
         async with self._session_factory() as session:
@@ -203,8 +204,18 @@ def _to_record(row: Any) -> RunRecord:
         updated_at=_epoch(getattr(row, "updated_at", None)),
         unrecordable=bool(row.unrecordable),
         error=row.error,
-        meta=json.loads(row.meta_json) if row.meta_json else {},
+        meta=_meta(row.meta_json),
     )
+
+
+def _event(value: Any) -> dict[str, Any]:
+    loaded = load_json(value)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _meta(value: Any) -> dict[str, Any]:
+    loaded = load_json(value)
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def _epoch(value: Any) -> float:

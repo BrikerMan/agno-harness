@@ -117,6 +117,11 @@ class ThreadService:
         rebuild transcripts via ``session_to_messages``. ``messageCount`` is
         deprecated and always ``0``.
         """
+        if getattr(self.stores, "threads", None) is not None:
+            store_threads = await self.stores.threads.list_threads(user_id=user_id)
+            if store_threads:
+                return store_threads
+
         threads: list[dict[str, Any]] = []
         for session in await self.get_sessions(user_id=user_id):
             row = thread_summary_from_session(session)
@@ -125,22 +130,47 @@ class ThreadService:
         threads.sort(key=lambda t: t.get("updatedAt") or 0, reverse=True)
         return threads
 
-    async def delete_thread(self, thread_id: str, *, user_id: str | None = None) -> dict[str, Any]:
+    async def get_thread(
+        self, thread_id: str, *, user_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get a single thread's metadata and status."""
+        if getattr(self.stores, "threads", None) is not None:
+            thread = await self.stores.threads.get_thread(thread_id, user_id=user_id)
+            if thread is not None:
+                return thread
+
+        session = await self.get_session(thread_id, user_id=user_id)
+        if session is not None:
+            return thread_summary_from_session(session)
+        return None
+
+    async def delete_thread(
+        self, thread_id: str, *, user_id: str | None = None, hard: bool = False
+    ) -> dict[str, Any]:
         """Delete a thread and the records the toolbox added alongside it."""
-        if self.db is None:
-            return {"ok": False, "error": "no session database is configured"}
-        result: dict[str, Any] = {"ok": True}
-        try:
-            deleted = self.db.delete_session(session_id=thread_id, user_id=user_id)
-            if inspect.isawaitable(deleted):
-                deleted = await deleted
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        if deleted is False:
-            # Either it is gone or it is not theirs. Saying which would answer a
-            # question the caller has not earned the right to ask, and the
-            # toolbox's own rows must stay put for whoever does own them.
+        deleted_in_store = False
+        if getattr(self.stores, "threads", None) is not None:
+            deleted_in_store = await self.stores.threads.delete_thread(
+                thread_id, user_id=user_id, hard=hard
+            )
+
+        deleted_in_db = False
+        if self.db is not None:
+            try:
+                deleted = self.db.delete_session(session_id=thread_id, user_id=user_id)
+                if inspect.isawaitable(deleted):
+                    deleted = await deleted
+                deleted_in_db = bool(deleted)
+            except Exception as exc:  # noqa: BLE001
+                if not deleted_in_store:
+                    return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+        if not deleted_in_store and not deleted_in_db:
             return {"ok": False, "error": "thread not found"}
+
+        result: dict[str, Any] = {"ok": True}
+        if not hard:
+            result["soft"] = True
 
         if self.stores.custom_events is not None:
             try:

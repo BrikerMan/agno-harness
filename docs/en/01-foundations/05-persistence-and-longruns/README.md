@@ -15,6 +15,6 @@ Frontend idle reconnect → [Web 04](../../03-clients/01-web-react/04-attach-and
 
 | Step | Contents |
 | --- | --- |
-| [01 Dual storage](01-dual-storage.md) | Hot log vs archive; mixins; `X-Agui-Resume` |
+| [01 Dual storage](01-dual-storage.md) | Hot log vs archive; mixins; Alembic; `X-Agui-Resume` |
 | [02 Long-run routes](02-longrun-routes.md) | `LongRunManager`, `/attach`, `/active`, `/abort`; ping vs Redis beat |
 | [03 FAQ](03-faq.md) | Missing prompt, blank bubble, Stop, `runCount` |

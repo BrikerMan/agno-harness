@@ -9,6 +9,7 @@ from uuid import uuid4
 import aiosqlite
 from sqlalchemy import select
 
+from ..stores.mixins import load_json, store_json
 from ..stores.sql_models import get_or_create_session_model
 from .models import ConversationKey, SessionRecord
 
@@ -142,7 +143,7 @@ class SQLAlchemySessionStore(BaseSessionStore):
         session_factory: Any,
         *,
         model: type[Any] | None = None,
-        table_name: str = "agno_conversation_sessions",
+        table_name: str | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.model = model or get_or_create_session_model(table_name)
@@ -154,7 +155,8 @@ class SQLAlchemySessionStore(BaseSessionStore):
             row = result.scalar_one_or_none()
             if not row:
                 return None
-            metadata = json.loads(row.metadata_json) if row.metadata_json else {}
+            loaded = load_json(row.metadata_json)
+            metadata = loaded if isinstance(loaded, dict) else {}
             return SessionRecord(
                 session_key=row.session_key,
                 agno_session_id=row.agno_session_id,
@@ -169,14 +171,14 @@ class SQLAlchemySessionStore(BaseSessionStore):
             stmt = select(self.model).where(self.model.session_key == record.session_key)
             result = await session.execute(stmt)
             existing = result.scalar_one_or_none()
-            meta_str = json.dumps(record.metadata, ensure_ascii=False) if record.metadata else None
+            meta_doc = store_json(record.metadata) if record.metadata else None
 
             if existing is not None:
                 existing.agno_session_id = record.agno_session_id
                 existing.started_at = record.started_at
                 existing.last_active_at = record.last_active_at
                 existing.finished_at = record.finished_at
-                existing.metadata_json = meta_str
+                existing.metadata_json = meta_doc
             else:
                 new_row = self.model(
                     session_key=record.session_key,
@@ -184,7 +186,7 @@ class SQLAlchemySessionStore(BaseSessionStore):
                     started_at=record.started_at,
                     last_active_at=record.last_active_at,
                     finished_at=record.finished_at,
-                    metadata_json=meta_str,
+                    metadata_json=meta_doc,
                 )
                 session.add(new_row)
 

@@ -8,9 +8,9 @@ table name, your own naming convention, and any extra columns you want::
         __tablename__ = "agent_custom_events"
         tenant_id: Mapped[str] = mapped_column(String(64), index=True)
 
-That way the records live in your migrations and your schema, next to the rest
-of your application, instead of in a private table the library creates behind
-your back.
+That way the records live in the agent project's Alembic migrations, next to
+the rest of its schema, instead of in a private table the library creates
+behind your back. Do not call ``metadata.create_all`` for these tables.
 
 If the columns do not suit you at all, skip the mixins and implement the store
 protocols in :mod:`agno_harness.persistence.stores` directly.
@@ -18,6 +18,7 @@ protocols in :mod:`agno_harness.persistence.stores` directly.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,6 +29,35 @@ from sqlalchemy.orm import Mapped, mapped_column
 # High-performance column variant: native binary JSONB on PostgreSQL (supports GIN indexes & ->> operators),
 # graceful fallback to JSON/TEXT on SQLite and MySQL.
 JSONVariant = JSON().with_variant(JSONB, "postgresql")
+
+
+def store_json(value: Any) -> Any:
+    """A JSON document for :data:`JSONVariant`.
+
+    The column receives an object. PostgreSQL stores ``JSONB``; SQLite stores
+    JSON text. ``None`` stays ``None``.
+    """
+    if value is None:
+        return None
+    return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
+def load_json(value: Any) -> Any:
+    """Read a :data:`JSONVariant` cell.
+
+    PostgreSQL hands back an object. SQLite may hand back that object or the
+    original text.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        if not value:
+            return None
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
 
 
 def _utcnow() -> datetime:
@@ -55,7 +85,7 @@ class CustomEventMixin(_RecordBase):
     """
 
     name: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
-    value_json: Mapped[str] = mapped_column(Text, nullable=False)
+    value_json: Mapped[Any] = mapped_column(JSONVariant, nullable=False)
 
 
 class RunFrameMixin(_RecordBase):
@@ -69,7 +99,7 @@ class RunFrameMixin(_RecordBase):
 
     sequence: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(16), default="delta", nullable=False)
-    event_json: Mapped[str] = mapped_column(Text, nullable=False)
+    event_json: Mapped[Any] = mapped_column(JSONVariant, nullable=False)
 
 
 class RunArchiveMixin(_RecordBase):
@@ -84,7 +114,7 @@ class RunArchiveMixin(_RecordBase):
     """
 
     user_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
-    events_json: Mapped[str] = mapped_column(Text, nullable=False)
+    events_json: Mapped[Any] = mapped_column(JSONVariant, nullable=False)
 
 
 class RunRecordMixin(_RecordBase):
@@ -102,7 +132,34 @@ class RunRecordMixin(_RecordBase):
     )
     unrecordable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meta_json: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
+
+
+class ThreadRecordMixin:
+    """First-class Thread entity for conversation listings, lifecycle, and UI status."""
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    user_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    title: Mapped[str] = mapped_column(String(256), default="New Chat", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True, nullable=False)
+    is_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_error: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    error_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_run_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    last_active_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, index=True, nullable=False
+    )
+    last_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    metadata_json: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
 
 
 class SessionRecordMixin:
@@ -118,7 +175,7 @@ class SessionRecordMixin:
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
 
 
 class ActionRecordMixin:
@@ -137,9 +194,9 @@ class ActionRecordMixin:
     status: Mapped[str] = mapped_column(
         String(32), default="pending", nullable=False, index=True
     )  # "pending", "approved", "rejected", "completed"
-    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
-    meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[Any] = mapped_column(JSONVariant, nullable=False)
+    meta_json: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
+    result_json: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -184,10 +241,13 @@ __all__ = [
     "ActionRecordMixin",
     "CustomEventMixin",
     "JSONVariant",
+    "load_json",
+    "store_json",
     "MessageAuditMixin",
     "RunArchiveMixin",
     "RunFrameMixin",
     "RunRecordMixin",
     "SessionRecordMixin",
+    "ThreadRecordMixin",
     "record_to_dict",
 ]

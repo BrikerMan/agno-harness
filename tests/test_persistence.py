@@ -141,6 +141,23 @@ class TestEventLog:
         assert stores.resume_mode.value == "history"
 
 
+class TestJsonColumns:
+    def test_postgresql_uses_jsonb_and_sqlite_uses_json(self):
+        from sqlalchemy.dialects import postgresql
+        from sqlalchemy.dialects import sqlite as sqlite_dialect
+
+        columns = (
+            AppCustomEvent.__table__.c.value_json,
+            AppRunArchive.__table__.c.events_json,
+            AppRunFrame.__table__.c.event_json,
+            AppRunRecord.__table__.c.meta_json,
+        )
+        for column in columns:
+            assert column.type.compile(dialect=postgresql.dialect()) == "JSONB"
+            sqlite_type = column.type.compile(dialect=sqlite_dialect.dialect())
+            assert sqlite_type == "JSON"
+
+
 class TestRegistry:
     def test_an_event_log_model_missing_columns_is_rejected_too(self):
         class IncompleteFrame(Base):

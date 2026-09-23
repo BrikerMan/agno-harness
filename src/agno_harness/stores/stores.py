@@ -12,14 +12,13 @@ dialect-specific SQL.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol, runtime_checkable
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from .mixins import record_to_dict
+from .mixins import load_json, record_to_dict, store_json
 
 
 @runtime_checkable
@@ -62,7 +61,7 @@ class SQLAlchemyCustomEventStore(_SQLAlchemyStore):
                     thread_id=thread_id,
                     run_id=run_id,
                     name=name,
-                    value_json=json.dumps(value, ensure_ascii=False),
+                    value_json=store_json(value),
                 )
             )
 
@@ -76,7 +75,7 @@ class SQLAlchemyCustomEventStore(_SQLAlchemyStore):
                 )
             ).scalars()
             return [
-                {**record_to_dict(row), "name": row.name, "value": _loads(row.value_json)}
+                {**record_to_dict(row), "name": row.name, "value": load_json(row.value_json)}
                 for row in rows
             ]
 
@@ -117,7 +116,7 @@ class SQLAlchemyHistoryArchive(_SQLAlchemyStore):
         *,
         user_id: str | None = None,
     ) -> None:
-        payload = json.dumps(list(events), ensure_ascii=False, default=str)
+        payload = store_json(list(events))
         async with self._session_factory() as session, session.begin():
             row = await session.scalar(select(self._model).where(self._model.run_id == run_id))
             if row is None:
@@ -144,7 +143,7 @@ class SQLAlchemyHistoryArchive(_SQLAlchemyStore):
             rows = (await session.execute(query.order_by(self._model.id))).scalars()
             out: list[tuple[str, list[dict[str, Any]]]] = []
             for row in rows:
-                loaded = _loads(row.events_json)
+                loaded = load_json(row.events_json)
                 events = loaded if isinstance(loaded, list) else []
                 out.append((row.run_id, events))
             return out
@@ -207,15 +206,6 @@ class InMemoryCustomEventStore:
         before = len(self._rows)
         self._rows = [row for row in self._rows if row["threadId"] != thread_id]
         return before - len(self._rows)
-
-
-def _loads(value: str | None) -> Any:
-    if not value:
-        return None
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        return value
 
 
 __all__ = [

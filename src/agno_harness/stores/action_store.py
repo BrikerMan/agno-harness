@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
 
+from .mixins import load_json, store_json
 from .sql_models import get_or_create_action_model
 
 
@@ -23,7 +23,7 @@ class SQLAlchemyActionStore:
         session_factory: Any,
         *,
         model: type[Any] | None = None,
-        table_name: str = "agno_interactive_actions",
+        table_name: str | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.model = model or get_or_create_action_model(table_name)
@@ -50,8 +50,8 @@ class SQLAlchemyActionStore:
                 run_id=run_id,
                 tool_call_id=tool_call_id,
                 status="pending",
-                payload_json=json.dumps(payload_with_ref, ensure_ascii=False),
-                meta_json=json.dumps(meta, ensure_ascii=False) if meta else None,
+                payload_json=store_json(payload_with_ref),
+                meta_json=store_json(dict(meta)) if meta else None,
             )
             session.add(row)
         return action_ref
@@ -85,9 +85,9 @@ class SQLAlchemyActionStore:
                 "run_id": row.run_id,
                 "tool_call_id": row.tool_call_id,
                 "status": row.status,
-                "payload": json.loads(row.payload_json) if row.payload_json else {},
-                "meta": json.loads(row.meta_json) if row.meta_json else {},
-                "result": json.loads(row.result_json) if row.result_json else {},
+                "payload": _object(row.payload_json),
+                "meta": _object(row.meta_json),
+                "result": _object(row.result_json),
             }
 
     async def update_status(
@@ -110,7 +110,7 @@ class SQLAlchemyActionStore:
             for row in rows:
                 row.status = status
                 if result:
-                    row.result_json = json.dumps(result, ensure_ascii=False)
+                    row.result_json = store_json(dict(result))
 
 
 class InMemoryActionStore:
@@ -192,6 +192,11 @@ class InMemoryActionStore:
             record["status"] = status
             if result:
                 record["result"] = dict(result)
+
+
+def _object(value: Any) -> dict[str, Any]:
+    loaded = load_json(value)
+    return loaded if isinstance(loaded, dict) else {}
 
 
 __all__ = ["InMemoryActionStore", "SQLAlchemyActionStore"]

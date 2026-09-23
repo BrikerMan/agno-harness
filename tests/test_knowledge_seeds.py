@@ -18,4 +18,6 @@ def test_init_copies_seeds_and_leaves_edits(tmp_path) -> None:
     copy_knowledge_seeds(tmp_path)
 
     assert live.read_text(encoding="utf-8") == "edited live note\n"
-    assert (tmp_path / "data" / "knowledge" / "policy.md").read_text(encoding="utf-8") == "# Policy\n"
+    assert (tmp_path / "data" / "knowledge" / "policy.md").read_text(
+        encoding="utf-8"
+    ) == "# Policy\n"

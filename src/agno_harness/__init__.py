@@ -62,6 +62,13 @@ from .core.chimein import (
     KeywordChimeInPolicy,
     MentionOnlyPolicy,
 )
+from .db import (
+    AgnoHarnessDb,
+    AgnoHarnessPostgresDb,
+    AgnoHarnessSqliteDb,
+    AlembicMigrator,
+    MissingHarnessTablesError,
+)
 from .helpers import (
     begin_lark_app_registration,
     generate_lark_setup_guide,
@@ -143,12 +150,15 @@ from .skills import (
     SkillValidationError,
 )
 from .stores import (
+    DEFAULT_TABLE_PREFIX,
     ActionRecordMixin,
+    BaseThreadStore,
     CustomEventMixin,
     CustomEventStore,
     DefaultRelayBase,
     InMemoryActionStore,
     InMemoryCustomEventStore,
+    InMemoryThreadStore,
     MessageAuditMixin,
     ResumeMode,
     RunArchiveMixin,
@@ -156,8 +166,17 @@ from .stores import (
     RunRecordMixin,
     SessionRecordMixin,
     SQLAlchemyActionStore,
+    SQLAlchemyThreadStore,
     StoreRegistry,
     Stores,
+    ThreadRecordMixin,
+    apply_table_prefix,
+    get_or_create_thread_model,
+    harness_metadata,
+    include_harness,
+    numbered_revisions,
+    register_harness_models,
+    table_name,
 )
 from .stream import MessageCollector, StreamMode, ThrottledStreamBuffer
 from .tools import (
@@ -182,7 +201,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 
 def __getattr__(name: str) -> Any:
@@ -228,12 +247,17 @@ __all__ = [
     "TRACE_DIR_ENV",
     "AgentRunner",
     "AgentRuntime",
+    "AgnoHarnessDb",
+    "AgnoHarnessPostgresDb",
+    "AgnoHarnessSqliteDb",
+    "AlembicMigrator",
     "AlwaysChimeInPolicy",
     "ArtifactCard",
     "AttachmentProcessor",
     "AuditRecord",
     "BaseChannel",
     "BaseSink",
+    "BaseThreadStore",
     "BlockSchema",
     "BridgeModule",
     "CLIChannel",
@@ -249,7 +273,14 @@ __all__ = [
     "CustomEventMixin",
     "CustomEventStore",
     "DebugTap",
+    "DEFAULT_TABLE_PREFIX",
     "DefaultRelayBase",
+    "apply_table_prefix",
+    "harness_metadata",
+    "include_harness",
+    "numbered_revisions",
+    "register_harness_models",
+    "table_name",
     "default_builder",
     "EventParser",
     "EventSequencer",
@@ -259,6 +290,7 @@ __all__ = [
     "InMemoryCustomEventStore",
     "InMemorySessionStore",
     "InMemorySink",
+    "InMemoryThreadStore",
     "InboundAttachment",
     "ItemSchema",
     "KeywordChimeInPolicy",
@@ -269,6 +301,7 @@ __all__ = [
     "MentionOnlyPolicy",
     "MessageAuditMixin",
     "MessageCollector",
+    "MissingHarnessTablesError",
     "Module",
     "ModuleConflict",
     "ModuleRegistry",
@@ -316,6 +349,10 @@ __all__ = [
     "SessionManager",
     "SessionRecord",
     "SessionRecordMixin",
+    "ThreadRecordMixin",
+    "SQLAlchemyActionStore",
+    "SQLAlchemyThreadStore",
+    "get_or_create_thread_model",
     "SkillDefinition",
     "SkillError",
     "SkillManager",

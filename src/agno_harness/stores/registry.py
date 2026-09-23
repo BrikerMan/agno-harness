@@ -35,11 +35,17 @@ from .stores import (
     SQLAlchemyCustomEventStore,
     SQLAlchemyHistoryArchive,
 )
+from .thread_store import (
+    BaseThreadStore,
+    InMemoryThreadStore,
+    SQLAlchemyThreadStore,
+)
 
 # Which SQLAlchemy store implementation backs each record kind.
 _IMPLEMENTATIONS: dict[Any, type[Any]] = {
     CustomEventStore: SQLAlchemyCustomEventStore,
     HistoryArchive: SQLAlchemyHistoryArchive,
+    BaseThreadStore: SQLAlchemyThreadStore,
 }
 
 
@@ -78,6 +84,7 @@ class Stores:
         event_log: RunEventLog | None = None,
         event_stream: RunEventStream | None = None,
         history_archive: HistoryArchive | None = None,
+        threads: BaseThreadStore | None = None,
     ) -> None:
         self.custom_events = custom_events
         self.event_log = event_log
@@ -87,6 +94,7 @@ class Stores:
             event_stream = event_log
         self.event_stream = event_stream
         self.history_archive = history_archive
+        self.threads = threads if threads is not None else InMemoryThreadStore()
 
     @property
     def resume_mode(self) -> ResumeMode:
@@ -130,10 +138,11 @@ class Stores:
             event_log=log,
             event_stream=log,
             history_archive=InMemoryHistoryArchive(),
+            threads=InMemoryThreadStore(),
         )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
-        names = ("custom_events", "event_log", "event_stream", "history_archive")
+        names = ("custom_events", "event_log", "event_stream", "history_archive", "threads")
         present = [n for n in names if getattr(self, n) is not None]
         return f"Stores({', '.join(present) or 'empty'})"
 
@@ -198,12 +207,14 @@ class StoreRegistry:
             event_log=built.get(RunEventLog),
             event_stream=built.get(RunEventStream),
             history_archive=built.get(HistoryArchive),
+            threads=built.get(BaseThreadStore),
         )
 
 
 _REQUIRED_COLUMNS: dict[Any, tuple[str, ...]] = {
     CustomEventStore: ("thread_id", "run_id", "name", "value_json"),
     HistoryArchive: ("thread_id", "run_id", "events_json"),
+    BaseThreadStore: ("thread_id", "title", "status", "is_paused", "is_error", "run_count"),
 }
 
 

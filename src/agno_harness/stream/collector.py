@@ -201,7 +201,9 @@ class MessageCollector:
                 if self.current_block is not None and self.catalog is not None:
                     text = str(self.current_block.get("text") or "").strip()
                     if text:
-                        schema = self.catalog.block_schema(str(self.current_block.get("name") or ""))
+                        schema = self.catalog.block_schema(
+                            str(self.current_block.get("name") or "")
+                        )
                         self.rendered_items.append(
                             _text_body_fragment(
                                 self.platform,

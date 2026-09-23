@@ -19,9 +19,11 @@ from .core.chimein import ChimeInPolicy
 from .core.streamui.schema import CardCatalog
 from .runtime.closure import strip_stream_ui
 from .runtime.runtime import AgentRuntime
-from .sessions.manager import SessionKeyResolver, SessionManager
+from .sessions.manager import SessionKeyResolver, SessionManager, SQLAlchemySessionStore
 from .sessions.models import ConversationKey
 from .sinks.base import BaseSink
+from .sinks.sql import SQLAlchemySink
+from .stores.action_store import SQLAlchemyActionStore
 from .stream.buffer import ThrottledStreamBuffer
 from .stream.collector import MessageCollector
 from .stream.modes import StreamMode
@@ -133,13 +135,27 @@ class RelayApp:
 
         self.runtime: AgentRuntime = runtime
         self.card_catalog = card_catalog or getattr(self.runtime, "catalog", None)
-        self.action_store = action_store
+
+        h_db = getattr(runtime, "harness_db", None)
+        if action_store is not None:
+            self.action_store = action_store
+        elif h_db is not None and getattr(h_db, "session_factory", None) is not None:
+            actions_model = getattr(h_db, "models", {}).get("actions")
+            self.action_store = SQLAlchemyActionStore(h_db.session_factory, model=actions_model)
+        else:
+            self.action_store = None
+
         self.attachment_processor = attachment_processor
         self.chime_in_policy = chime_in_policy
+
         if session_manager is not None:
             self.session_manager = session_manager
             if session_resolver is not None:
                 self.session_manager.resolver = session_resolver
+        elif h_db is not None and getattr(h_db, "session_factory", None) is not None:
+            sessions_model = getattr(h_db, "models", {}).get("sessions")
+            store = SQLAlchemySessionStore(h_db.session_factory, model=sessions_model)
+            self.session_manager = SessionManager(store=store, resolver=session_resolver)
         else:
             self.session_manager = SessionManager(resolver=session_resolver)
 
@@ -150,6 +166,9 @@ class RelayApp:
 
         self.channels: dict[str, tuple[BaseChannel, StreamMode]] = {}
         self.sinks: list[BaseSink] = []
+        if h_db is not None and getattr(h_db, "session_factory", None) is not None:
+            audits_model = getattr(h_db, "models", {}).get("audits")
+            self.sinks.append(SQLAlchemySink(h_db.session_factory, model=audits_model))
         self._action_handlers: dict[str, ActionHandler] = dict(action_handlers or {})
         self._tasks: list[asyncio.Task[None]] = []
         self._running = False

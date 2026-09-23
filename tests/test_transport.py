@@ -256,7 +256,9 @@ class TestLongRunRoutes:
         body = client.post("/api/v1/channels/web/agui?detach=1", json=_payload()).text
         last = [line[len("id: ") :] for line in body.splitlines() if line.startswith("id: ")][-1]
 
-        events = parse_sse(client.get("/api/v1/runs/run-1/attach", headers={"Last-Event-ID": last}).text)
+        events = parse_sse(
+            client.get("/api/v1/runs/run-1/attach", headers={"Last-Event-ID": last}).text
+        )
         assert events == []
 
     def test_the_resume_mode_is_advertised(self):
@@ -375,7 +377,8 @@ class TestDetachedStreaming:
 
         with TestClient(app) as client:
             response = client.post(
-                "/api/v1/channels/web/agui?detach=1", json=make_input().model_dump(by_alias=True, mode="json")
+                "/api/v1/channels/web/agui?detach=1",
+                json=make_input().model_dump(by_alias=True, mode="json"),
             )
             events = parse_sse(response.text)
 
@@ -392,7 +395,8 @@ class TestDetachedStreaming:
 
         with TestClient(app) as client:
             body = client.post(
-                "/api/v1/channels/web/agui?detach=1", json=make_input().model_dump(by_alias=True, mode="json")
+                "/api/v1/channels/web/agui?detach=1",
+                json=make_input().model_dump(by_alias=True, mode="json"),
             ).text
 
         ids = [line[3:].strip() for line in body.splitlines() if line.startswith("id:")]
@@ -435,6 +439,45 @@ class TestProtocolVersion:
         started = parse_sse(post_run(client).text)[0]
         assert started["rawEvent"]["protocol"] == WIRE_PROTOCOL_VERSION
         assert started["rawEvent"]["user_input"] == "hello"
+
+
+class TestThreadRoutes:
+    def test_get_and_delete_thread_endpoints(self):
+        client, runtime = make_client()
+        # Post a run so thread is created in stores.threads
+        post_run(client, thread_id="thread-abc")
+
+        # GET /api/v1/threads
+        list_res = client.get("/api/v1/threads")
+        assert list_res.status_code == 200
+        threads = list_res.json()
+        assert len(threads) >= 1
+        t = next(t for t in threads if t["threadId"] == "thread-abc")
+        assert t["threadId"] == "thread-abc"
+        assert t["status"] == "finished"
+        assert t["isPaused"] is False
+        assert t["isError"] is False
+
+        # GET /api/v1/threads/{id}
+        get_res = client.get("/api/v1/threads/thread-abc")
+        assert get_res.status_code == 200
+        assert get_res.json()["threadId"] == "thread-abc"
+        assert get_res.json()["status"] == "finished"
+
+        # DELETE /api/v1/threads/{id} (default soft delete)
+        del_res = client.delete("/api/v1/threads/thread-abc")
+        assert del_res.status_code == 200
+        assert del_res.json().get("ok") is True
+        assert del_res.json().get("soft") is True
+
+        # Now GET should return 404
+        assert client.get("/api/v1/threads/thread-abc").status_code == 404
+
+        # Hard delete
+        hard_del = client.delete("/api/v1/threads/thread-abc?hard=true")
+        assert hard_del.status_code == 200
+        assert hard_del.json().get("ok") is True
+        assert "soft" not in hard_del.json()
 
 
 class TestConfiguration:

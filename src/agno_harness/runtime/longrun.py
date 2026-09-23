@@ -214,6 +214,25 @@ class LongRunManager:
                 await self.log.set_status(run_id, status, **({"error": error} if error else {}))
             with contextlib.suppress(Exception):
                 await self._archive_run(run_id)
+            if getattr(self.runtime.stores, "threads", None) is not None:
+                with contextlib.suppress(Exception):
+                    thread_id = run_input.thread_id
+                    if status == RunStatus.PAUSED:
+                        await self.runtime.stores.threads.set_paused(
+                            thread_id, is_paused=True, run_id=run_id
+                        )
+                    elif status == RunStatus.ABORTED:
+                        await self.runtime.stores.threads.set_cancelled(
+                            thread_id, reason="aborted", run_id=run_id
+                        )
+                    elif status == RunStatus.ERROR:
+                        await self.runtime.stores.threads.set_finished(
+                            thread_id, is_error=True, error_reason=error, run_id=run_id
+                        )
+                    else:
+                        await self.runtime.stores.threads.set_finished(
+                            thread_id, is_error=False, run_id=run_id
+                        )
             # After the status, so a follower that wakes on the close reads the
             # finished record rather than a stale "running" one.
             self._local.close(run_id)
@@ -345,6 +364,11 @@ class LongRunManager:
                 await self._append(run_id, cancel_event)
                 await self._archive_run(run_id)
         await self.log.set_status(run_id, RunStatus.ABORTED)
+        if getattr(self.runtime.stores, "threads", None) is not None:
+            with contextlib.suppress(Exception):
+                await self.runtime.stores.threads.set_cancelled(
+                    record.thread_id, reason="user_aborted", run_id=run_id
+                )
         target_db = self.runtime.db or getattr(self.runtime.agent, "db", None)
         if target_db is not None:
             with contextlib.suppress(Exception):
@@ -372,6 +396,15 @@ class LongRunManager:
                 await self.log.set_status(
                     run_id, RunStatus.ERROR, error="the server restarted while this run was going"
                 )
+                if getattr(self.runtime.stores, "threads", None) is not None:
+                    rec = await self.log.get_run(run_id)
+                    if rec is not None:
+                        await self.runtime.stores.threads.set_finished(
+                            rec.thread_id,
+                            is_error=True,
+                            error_reason="the server restarted while this run was going",
+                            run_id=run_id,
+                        )
         self._tasks.clear()
 
 

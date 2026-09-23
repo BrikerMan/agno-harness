@@ -15,6 +15,6 @@ Agno session 是给**下一轮模型**的，不是用户看过的流。刷新还
 
 | 步 | 内容 |
 | --- | --- |
-| [01 双存储](01-dual-storage.md) | 热 log vs archive；mixin；`X-Agui-Resume` |
+| [01 双存储](01-dual-storage.md) | 热 log vs archive；mixin；Alembic；`X-Agui-Resume` |
 | [02 长任务路由](02-longrun-routes.md) | `LongRunManager`、`/attach`、`/active`、`/abort`；ping vs Redis beat |
 | [03 FAQ](03-faq.md) | 提问消失、空白气泡、Stop、`runCount` |

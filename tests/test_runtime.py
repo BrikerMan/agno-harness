@@ -8,6 +8,7 @@ import json
 import pytest
 from ag_ui.core import CustomEvent, EventType
 from agno.run.agent import RunPausedEvent
+from agno.utils.response import get_paused_content
 
 from agno_harness import (
     AgentRuntime,
@@ -22,7 +23,6 @@ from agno_harness.runtime import (
     EVENT_SUBAGENT_START,
 )
 from agno_harness.runtime.parsers import subagent_steps_parser
-from agno_harness.runtime.translator import _CANNED_PAUSE_CONTENT
 
 from .conformance import assert_valid_agui_sequence, messages_from_events
 from .conftest import (
@@ -585,37 +585,34 @@ class TestHITL:
         assert paused[0].value["toolName"] == "delete_file"
         assert paused[0].value["toolArgs"] == {"path": "/tmp/x"}
 
-    def test_canned_pause_phrases_are_agnos_seven_sentences(self):
-        assert {
-            "I have tools to execute, but I need confirmation, user input, or external execution.",
-            "I have tools to execute, but I need confirmation or user input.",
-            "I have tools to execute, but I need confirmation or external execution.",
-            "I have tools to execute, but I need user input or external execution.",
-            "I have tools to execute, but I need confirmation.",
-            "I have tools to execute, but I need user input.",
-            "I have tools to execute, but it needs external execution.",
-        } == _CANNED_PAUSE_CONTENT
-
-    @pytest.mark.parametrize("phrase", sorted(_CANNED_PAUSE_CONTENT))
-    async def test_canned_pause_copy_is_not_framed_as_text(self, phrase: str):
-        paused = RunPausedEvent(
-            content=phrase,
-            tools=[
-                tool_execution(
-                    "c1",
-                    "ask_user",
-                    {"questions": []},
-                    external_execution_required=True,
-                )
-            ],
-        )
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            {"requires_confirmation": True},
+            {"requires_user_input": True},
+            {"external_execution_required": True},
+            {"requires_confirmation": True, "requires_user_input": True},
+            {"requires_confirmation": True, "external_execution_required": True},
+            {"requires_user_input": True, "external_execution_required": True},
+            {
+                "requires_confirmation": True,
+                "requires_user_input": True,
+                "external_execution_required": True,
+            },
+        ],
+    )
+    async def test_pause_filler_is_not_framed_as_text(self, flags: dict[str, bool]):
+        tool = tool_execution("c1", "ask_user", {"questions": []}, **flags)
+        filler = get_paused_content(RunPausedEvent(tools=[tool]))
+        assert filler
+        paused = RunPausedEvent(content=filler, tools=[tool])
         events = await stream(runtime_for([paused]))
         assert text_of(events) == ""
         assert "TOOL_CALL_START" in types_of(events)
         descriptors = customs(events, EVENT_RUN_PAUSED)
         assert len(descriptors) == 1
         assert descriptors[0].value["toolName"] == "ask_user"
-        assert paused.content == phrase
+        assert paused.content == filler
 
     async def test_real_pause_text_is_kept(self):
         paused = RunPausedEvent(
@@ -626,21 +623,25 @@ class TestHITL:
         assert text_of(events) == "Which database should we use?"
         assert "TOOL_CALL_START" in types_of(events)
 
-    async def test_pause_text_that_only_contains_a_canned_phrase_is_kept(self):
-        phrase = "I have tools to execute, but I need user input. Which database?"
-        paused = RunPausedEvent(
-            content=phrase,
-            tools=[tool_execution("c1", "ask_user", {}, requires_user_input=True)],
-        )
+    async def test_pause_text_longer_than_the_filler_is_kept(self):
+        tool = tool_execution("c1", "ask_user", {}, requires_user_input=True)
+        phrase = get_paused_content(RunPausedEvent(tools=[tool])) + " Which database?"
+        paused = RunPausedEvent(content=phrase, tools=[tool])
         events = await stream(runtime_for([paused]))
         assert text_of(events) == phrase
 
-    async def test_streamed_answer_survives_a_canned_pause_tail(self):
-        phrase = "I have tools to execute, but it needs external execution."
-        paused = RunPausedEvent(
-            content=phrase,
-            tools=[tool_execution("c1", "ask_user", {}, external_execution_required=True)],
-        )
+    async def test_a_filler_sentence_for_different_tools_is_kept(self):
+        external = tool_execution("c1", "ask_user", {}, external_execution_required=True)
+        other = get_paused_content(RunPausedEvent(tools=[external]))
+        confirm = tool_execution("c1", "ask_user", {}, requires_confirmation=True)
+        paused = RunPausedEvent(content=other, tools=[confirm])
+        events = await stream(runtime_for([paused]))
+        assert text_of(events) == other
+
+    async def test_streamed_answer_survives_a_pause_filler_tail(self):
+        tool = tool_execution("c1", "ask_user", {}, external_execution_required=True)
+        filler = get_paused_content(RunPausedEvent(tools=[tool]))
+        paused = RunPausedEvent(content=filler, tools=[tool])
         events = await stream(runtime_for([content("Asking now. "), paused]))
         assert text_of(events) == "Asking now. "
 

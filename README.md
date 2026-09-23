@@ -5,7 +5,7 @@
 
 > **Your agent runs locally. You don't know where to start when you need to give it to customers.**
 
-[中文文档](README_zh.md) | [Docs](docs/en/README.md) | [SPEC.md](SPEC.md) | [AGENTS.md](AGENTS.md)
+[中文文档](README_zh.md) | [Docs](docs/en/README.md) | [Changelog](CHANGELOG.md) | [SPEC.md](SPEC.md) | [AGENTS.md](AGENTS.md)
 
 It chats fine in the terminal. The moment you want colleagues, customers, or a group to use it, you find the prompt is not what's missing: who is using it, where the chat left off, whether two people mix up, how to look up a mistake, how to put it on the web and in a group.
 

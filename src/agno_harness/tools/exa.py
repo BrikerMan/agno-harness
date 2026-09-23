@@ -116,7 +116,9 @@ class ExaTools(Toolkit):
         )
         if "error" in payload:
             message = payload["error"].get("message") if isinstance(payload["error"], dict) else ""
-            return f"Web search failed: {_short(message or 'the search service rejected the request')}"
+            return (
+                f"Web search failed: {_short(message or 'the search service rejected the request')}"
+            )
         return _render(query, _hits(payload))
 
     async def _initialize(self, client: httpx.AsyncClient) -> None:
@@ -126,7 +128,7 @@ class ExaTools(Toolkit):
             {
                 "protocolVersion": _PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "agno-harness", "version": "0.1.0"},
+                "clientInfo": {"name": "agno-harness", "version": "0.2.0"},
             },
         )
         if "error" in payload:
@@ -234,7 +236,11 @@ def _hits_from_json(data: Any) -> list[tuple[str, str, str]]:
         items = data
     elif isinstance(data, dict):
         found = next(
-            (data[key] for key in ("results", "organic", "data") if isinstance(data.get(key), list)),
+            (
+                data[key]
+                for key in ("results", "organic", "data")
+                if isinstance(data.get(key), list)
+            ),
             None,
         )
         items = found if found is not None else [data]

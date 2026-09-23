@@ -16,7 +16,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from rich.console import Console
 from rich.panel import Panel
@@ -352,7 +352,10 @@ def print_url(
                 width=width,
                 file=console.file,
                 force_terminal=console.is_terminal,
-                color_system=console.color_system,
+                color_system=cast(
+                    Literal["auto", "standard", "256", "truecolor", "windows"] | None,
+                    console.color_system,
+                ),
                 legacy_windows=False,
             )
         out.print(rendered, overflow="ignore", no_wrap=True, crop=False)
