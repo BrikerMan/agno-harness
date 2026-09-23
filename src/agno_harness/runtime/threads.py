@@ -117,9 +117,12 @@ class ThreadService:
         Falls back to Agno session rows if ThreadStore has no entries.
         """
         if getattr(self.stores, "threads", None) is not None:
-            store_threads = await self.stores.threads.list_threads(user_id=user_id)
-            if store_threads:
-                return store_threads
+            try:
+                store_threads = await self.stores.threads.list_threads(user_id=user_id)
+                if store_threads:
+                    return store_threads
+            except Exception:
+                pass
 
         threads: list[dict[str, Any]] = []
         for session in await self.get_sessions(user_id=user_id):
@@ -134,9 +137,12 @@ class ThreadService:
     ) -> dict[str, Any] | None:
         """Get a single thread's metadata and status directly from ThreadStore."""
         if getattr(self.stores, "threads", None) is not None:
-            thread = await self.stores.threads.get_thread(thread_id, user_id=user_id)
-            if thread is not None:
-                return thread
+            try:
+                thread = await self.stores.threads.get_thread(thread_id, user_id=user_id)
+                if thread is not None:
+                    return thread
+            except Exception:
+                pass
 
         session = await self.get_session(thread_id, user_id=user_id)
         if session is not None:
