@@ -130,6 +130,14 @@ def test_postgres_url_driver_normalization():
         mock_create.assert_called_once_with("postgresql+asyncpg://user:pass@localhost:5432/testdb")
 
 
+def test_postgres_from_session_factory():
+    mock_factory = MagicMock()
+    db = AgnoHarnessPostgresDb.from_session_factory(mock_factory, prefix="agno_harness")
+    assert db.prefix == "agno_harness"
+    assert db.session_factory is mock_factory
+    assert not db._owns_engine
+
+
 @pytest.mark.asyncio
 async def test_runtime_auto_binds_harness_db(tmp_path: Path):
     db_file = tmp_path / "runtime.db"

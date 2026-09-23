@@ -253,13 +253,14 @@ class AgnoHarnessSqliteDb(AgnoHarnessDb):
         prefix: str | None = None,
         auto_create: bool = True,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
+        owns_engine: bool = False,
     ) -> None:
         if session_factory is not None:
             super().__init__(
                 session_factory=session_factory,
                 prefix=prefix,
                 auto_create=auto_create,
-                owns_engine=False,
+                owns_engine=owns_engine,
             )
             return
 
@@ -301,13 +302,14 @@ class AgnoHarnessPostgresDb(AgnoHarnessDb):
         prefix: str | None = None,
         auto_create: bool = True,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
+        owns_engine: bool = False,
     ) -> None:
         if session_factory is not None:
             super().__init__(
                 session_factory=session_factory,
                 prefix=prefix,
                 auto_create=auto_create,
-                owns_engine=False,
+                owns_engine=owns_engine,
             )
             return
 
