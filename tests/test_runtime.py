@@ -7,6 +7,7 @@ import json
 
 import pytest
 from ag_ui.core import CustomEvent, EventType
+from agno.run.agent import RunPausedEvent
 
 from agno_harness import (
     AgentRuntime,
@@ -21,6 +22,7 @@ from agno_harness.runtime import (
     EVENT_SUBAGENT_START,
 )
 from agno_harness.runtime.parsers import subagent_steps_parser
+from agno_harness.runtime.translator import _CANNED_PAUSE_CONTENT
 
 from .conformance import assert_valid_agui_sequence, messages_from_events
 from .conftest import (
@@ -582,6 +584,65 @@ class TestHITL:
         assert paused[0].value["pauseType"] == "confirmation"
         assert paused[0].value["toolName"] == "delete_file"
         assert paused[0].value["toolArgs"] == {"path": "/tmp/x"}
+
+    def test_canned_pause_phrases_are_agnos_seven_sentences(self):
+        assert {
+            "I have tools to execute, but I need confirmation, user input, or external execution.",
+            "I have tools to execute, but I need confirmation or user input.",
+            "I have tools to execute, but I need confirmation or external execution.",
+            "I have tools to execute, but I need user input or external execution.",
+            "I have tools to execute, but I need confirmation.",
+            "I have tools to execute, but I need user input.",
+            "I have tools to execute, but it needs external execution.",
+        } == _CANNED_PAUSE_CONTENT
+
+    @pytest.mark.parametrize("phrase", sorted(_CANNED_PAUSE_CONTENT))
+    async def test_canned_pause_copy_is_not_framed_as_text(self, phrase: str):
+        paused = RunPausedEvent(
+            content=phrase,
+            tools=[
+                tool_execution(
+                    "c1",
+                    "ask_user",
+                    {"questions": []},
+                    external_execution_required=True,
+                )
+            ],
+        )
+        events = await stream(runtime_for([paused]))
+        assert text_of(events) == ""
+        assert "TOOL_CALL_START" in types_of(events)
+        descriptors = customs(events, EVENT_RUN_PAUSED)
+        assert len(descriptors) == 1
+        assert descriptors[0].value["toolName"] == "ask_user"
+        assert paused.content == phrase
+
+    async def test_real_pause_text_is_kept(self):
+        paused = RunPausedEvent(
+            content="Which database should we use?",
+            tools=[tool_execution("c1", "ask_user", {}, requires_user_input=True)],
+        )
+        events = await stream(runtime_for([paused]))
+        assert text_of(events) == "Which database should we use?"
+        assert "TOOL_CALL_START" in types_of(events)
+
+    async def test_pause_text_that_only_contains_a_canned_phrase_is_kept(self):
+        phrase = "I have tools to execute, but I need user input. Which database?"
+        paused = RunPausedEvent(
+            content=phrase,
+            tools=[tool_execution("c1", "ask_user", {}, requires_user_input=True)],
+        )
+        events = await stream(runtime_for([paused]))
+        assert text_of(events) == phrase
+
+    async def test_streamed_answer_survives_a_canned_pause_tail(self):
+        phrase = "I have tools to execute, but it needs external execution."
+        paused = RunPausedEvent(
+            content=phrase,
+            tools=[tool_execution("c1", "ask_user", {}, external_execution_required=True)],
+        )
+        events = await stream(runtime_for([content("Asking now. "), paused]))
+        assert text_of(events) == "Asking now. "
 
     async def test_run_paused_is_emitted_before_the_waiting_tool_frames(self):
         events = await stream(runtime_for([self._paused()]))

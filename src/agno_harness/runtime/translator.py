@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from dataclasses import is_dataclass, replace
 from typing import Any
 
 from ag_ui.core import (
@@ -77,6 +78,22 @@ _FAILURE_EVENTS = {
     "TeamRunError": "RunError",
     "TeamRunCancelled": "RunCancelled",
 }
+
+# agno.utils.response.get_paused_content fills an empty pause with one of these
+# sentences. They are not model output. An exact match is dropped before it
+# becomes a TEXT_MESSAGE_CONTENT frame; a real answer that merely contains one
+# of them is left alone.
+_CANNED_PAUSE_CONTENT = frozenset(
+    {
+        "I have tools to execute, but I need confirmation, user input, or external execution.",
+        "I have tools to execute, but I need confirmation or user input.",
+        "I have tools to execute, but I need confirmation or external execution.",
+        "I have tools to execute, but I need user input or external execution.",
+        "I have tools to execute, but I need confirmation.",
+        "I have tools to execute, but I need user input.",
+        "I have tools to execute, but it needs external execution.",
+    }
+)
 
 
 class AgentRunFailed(RuntimeError):
@@ -242,6 +259,9 @@ class EventTranslator:
 
         # The completion chunk was stashed when it arrived; the gap between that
         # record and this one is Agno finishing its own post-run work.
+        # Drop Agno's canned pause sentence before it is framed. The chunk Agno
+        # already stored is left as it was; only this copy is cleared.
+        final_chunk = _without_canned_pause_content(final_chunk)
         self._stage("completion", chunk_event_value(final_chunk) or None)
         for event in process_completion(final_chunk, self.scope.stream_state):
             async for out in self._emit(event):
@@ -383,6 +403,21 @@ def make_run_scope(
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+
+def _without_canned_pause_content(chunk: Any) -> Any:
+    """Return ``chunk`` with Agno's canned pause sentence removed.
+
+    The original object is not modified, so a run Agno already stored keeps
+    the sentence it wrote. Only the copy handed to ``process_completion`` is
+    cleared, and only when ``content`` is exactly one of the seven sentences.
+    """
+    content = getattr(chunk, "content", None)
+    if not isinstance(content, str) or content not in _CANNED_PAUSE_CONTENT:
+        return chunk
+    if is_dataclass(chunk) and not isinstance(chunk, type):
+        return replace(chunk, content=None)
+    return chunk
 
 
 def _failure_message(chunk: Any, code: str) -> str:
