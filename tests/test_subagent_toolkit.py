@@ -119,3 +119,68 @@ class TestSubAgentToolkitDelegation:
         )
         assert result.startswith("ok")
         assert "subagent_session:" in result
+
+    async def test_subagent_retries_on_first_token_timeout_and_succeeds(self):
+        import asyncio
+
+        attempts = 0
+
+        class HangingThenFastAgent:
+            name = "reviewer"
+            description = "Reviews code."
+
+            async def arun(self, **kwargs):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    # Hang longer than first_chunk_timeout
+                    await asyncio.sleep(0.2)
+                    yield content("late chunk")
+                else:
+                    yield content("fast chunk")
+                    yield run_completed()
+
+        agent = HangingThenFastAgent()
+        toolkit = SubAgentToolkit(
+            agents=[agent],  # type: ignore[arg-type]
+            first_chunk_timeout=0.05,
+            inter_chunk_timeout=0.1,
+            max_attempts=2,
+        )
+        result = await toolkit.delegate_subagent(
+            agent_name="reviewer",
+            description="testing retry",
+            prompt="do it",
+        )
+        assert attempts == 2
+        assert "fast chunk" in result
+
+    async def test_subagent_exhausts_retries_and_raises_timeout_error(self):
+        import asyncio
+
+        attempts = 0
+
+        class AlwaysHangingAgent:
+            name = "reviewer"
+            description = "Reviews code."
+
+            async def arun(self, **kwargs):
+                nonlocal attempts
+                attempts += 1
+                await asyncio.sleep(0.5)
+                yield content("never reached")
+
+        agent = AlwaysHangingAgent()
+        toolkit = SubAgentToolkit(
+            agents=[agent],  # type: ignore[arg-type]
+            first_chunk_timeout=0.05,
+            inter_chunk_timeout=0.05,
+            max_attempts=2,
+        )
+        with pytest.raises(TimeoutError, match="upstream model stream timed out"):
+            await toolkit.delegate_subagent(
+                agent_name="reviewer",
+                description="testing exhaustion",
+                prompt="do it",
+            )
+        assert attempts == 2

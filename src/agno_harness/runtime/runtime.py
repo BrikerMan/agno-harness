@@ -55,7 +55,7 @@ from ..core.types import ToolFilter
 from ..stores.prefix import apply_table_prefix
 from ..stores.registry import Stores
 from .closure import seal_session_run
-from .hitl import detect_resume, resume_result_events
+from .hitl import detect_resume, extract_resume_input, resume_result_events
 from .inspector import InspectorRegistry
 from .module import BridgeModule, ModuleRegistry
 from .modules.custom_events import CustomEventsModule
@@ -352,7 +352,7 @@ class AgentRuntime:
 
         if getattr(self.stores, "threads", None) is not None:
             with contextlib.suppress(Exception):
-                prompt = last_user_text(run_input)
+                prompt = scope.user_text
                 await self.stores.threads.start_turn(
                     thread_id=scope.thread_id,
                     user_id=scope.user_id,
@@ -503,12 +503,14 @@ class AgentRuntime:
     ) -> RunScope:
         thread_id = run_input.thread_id or _new_id("thread")
         run_id = run_input.run_id or _new_id("run")
+        resume = detect_resume(run_input)
+        user_text = extract_resume_input(resume) if resume else last_user_text(run_input.messages)
         stream_state = StreamState(thread_id=thread_id, run_id=run_id)
         scope = RunScope(
             thread_id=thread_id,
             run_id=run_id,
             user_id=user_id,
-            user_text=last_user_text(run_input.messages),
+            user_text=user_text,
             stream_state=stream_state,
             state_tracker=StateTracker(validate_state(run_input.state, thread_id)),
             inspector=self.inspectors.open(

@@ -38,6 +38,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from enum import Enum
 from typing import Any
@@ -195,11 +196,23 @@ def make_agui_router(
             PROTOCOL_HEADER: WIRE_PROTOCOL_VERSION,
         }
 
-        is_long_run = long_run or long_run_underscore or detach
+        after = request.headers.get("last-event-id") or request.query_params.get("after")
+        explicit_detach = long_run or long_run_underscore or detach
+        # When long_runs is configured on the router, default to detached long-run mode
+        # unless explicitly disabled by the caller (e.g. ?long-run=false).
+        is_long_run = (
+            explicit_detach
+            if (
+                "long-run" in request.query_params
+                or "long_run" in request.query_params
+                or "detach" in request.query_params
+            )
+            else (long_runs is not None)
+        )
         if is_long_run and long_runs is not None:
             await long_runs.start(run_input, user_id=user_id)
             return StreamingResponse(
-                _attach(long_runs, run_input.run_id, None, user_id),
+                _attach(long_runs, run_input.run_id, after, user_id),
                 media_type="text/event-stream",
                 headers=headers,
             )
@@ -360,15 +373,21 @@ async def _encode(
 ) -> AsyncIterator[str]:
     async def _frames() -> AsyncIterator[str]:
         tap = DebugTap() if debug else None
+        seq = 0
+        now_ms = int(time.time() * 1000)
         async for event in runtime.stream_events(run_input, request=request, user_id=user_id):
             if tap is not None:
                 tap.observe(event)
-            yield encoder.encode(event)
+            seq += 1
+            data = encoder.encode(event)
+            yield f"id: {now_ms}-{seq}\n{data}"
         if tap is not None:
             # After RUN_FINISHED on purpose: a debug frame must never be mistaken for
             # part of the run, and clients that ignore unknown CUSTOM names see
             # exactly the stream they would have got without ?debug=1.
-            yield encoder.encode(tap.summary_event(runtime.last_violations()))
+            seq += 1
+            data = encoder.encode(tap.summary_event(runtime.last_violations()))
+            yield f"id: {now_ms}-{seq}\n{data}"
 
     async for chunk in _with_sse_ping(_frames()):
         yield chunk

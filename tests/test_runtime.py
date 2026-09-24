@@ -645,6 +645,16 @@ class TestHITL:
         events = await stream(runtime_for([content("Asking now. "), paused]))
         assert text_of(events) == "Asking now. "
 
+    async def test_streamed_content_is_not_duplicated_on_pause(self):
+        tool = tool_execution("c1", "ask_user", {"choice": "1"}, requires_user_input=True)
+        paused = RunPausedEvent(content="Hello world! Here is the question.", tools=[tool])
+        events = await stream(
+            runtime_for([content("Hello world! "), content("Here is the question."), paused])
+        )
+        assert text_of(events) == "Hello world! Here is the question."
+        tool_starts = [e for e in events if getattr(e, "type", None) == EventType.TOOL_CALL_START]
+        assert len(tool_starts) == 1
+
     async def test_run_paused_is_emitted_before_the_waiting_tool_frames(self):
         events = await stream(runtime_for([self._paused()]))
         names = [

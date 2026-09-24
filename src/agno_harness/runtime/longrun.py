@@ -49,8 +49,9 @@ from ag_ui.core import BaseEvent, CustomEvent, EventType, RunAgentInput
 
 from ..core.log import Frame, RunEventLog, RunEventStream, RunRecord, RunStatus, coalesce_events
 from .closure import seal_session_run
+from .hitl import detect_resume, extract_resume_input
 from .replay import last_user_text
-from .runtime import AgentRuntime
+from .runtime import AgentRuntime, _new_id
 from .translator import EVENT_RUN_CANCELLED, EVENT_RUN_PAUSED
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,15 @@ class LongRunManager:
         """
         run_id = run_input.run_id
         thread_id = run_input.thread_id
+        if not thread_id:
+            # Mint HERE, once, and write it back into run_input — _pump holds the same
+            # object, so the runtime's ``thread_id or _new_id("thread")`` adopts it and
+            # registration, the RUN_STARTED frame and the Agno session all share one id.
+            thread_id = _new_id("thread")
+            run_input.thread_id = thread_id
+        if not run_id:
+            run_id = _new_id("run")
+            run_input.run_id = run_id
 
         existing = await self.log.get_run(run_id)
         if existing is not None and existing.is_open:
@@ -144,7 +154,8 @@ class LongRunManager:
             _require_owner(existing, user_id)
             return existing
 
-        prompt = last_user_text(run_input.messages)
+        resume = detect_resume(run_input)
+        prompt = extract_resume_input(resume) if resume else last_user_text(run_input.messages)
         record = await self.log.start_run(
             run_id, thread_id, user_id=user_id, **({"input": prompt} if prompt else {})
         )

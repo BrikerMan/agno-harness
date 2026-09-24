@@ -68,6 +68,22 @@ def detect_resume(run_input: RunAgentInput) -> ResumeRequest | None:
     return ResumeRequest(tool_messages=list(tool_messages))
 
 
+def extract_resume_input(resume: ResumeRequest) -> str:
+    """Extract triggering answer text from trailing tool messages on resume."""
+    parts: list[str] = []
+    for msg in resume.tool_messages:
+        content = getattr(msg, "content", None)
+        if not content:
+            continue
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, (dict, list)):
+            parts.append(json.dumps(content, ensure_ascii=False))
+        else:
+            parts.append(str(content))
+    return "\n".join(parts)
+
+
 def client_tool_functions(run_input: RunAgentInput) -> list[Any] | None:
     """Convert client-declared tools into external-execution Agno functions."""
     return parse_client_tools(run_input.tools) or None
@@ -211,6 +227,7 @@ __all__ = [
     "detect_resume",
     "encode_tool_result",
     "ensure_requirements_resolved",
+    "extract_resume_input",
     "resolve_requirements_from_tool_messages",
     "resume_paused_run",
     "resume_result_events",

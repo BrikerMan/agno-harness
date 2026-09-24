@@ -16,6 +16,8 @@ watches the sub-agent work live inside a panel. Pass ``stream=False`` for the
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 from collections.abc import Sequence
 from typing import Any
@@ -25,6 +27,8 @@ from agno.run.base import RunContext
 from agno.tools import Toolkit
 
 from agno_harness.runtime.modules.subagent import substream
+
+logger = logging.getLogger(__name__)
 
 TOOL_NAME = "delegate_subagent"
 
@@ -51,6 +55,10 @@ class SubAgentToolkit(Toolkit):
 
     TOOL_NAME = TOOL_NAME
 
+    DEFAULT_FIRST_CHUNK_TIMEOUT: float = 75.0
+    DEFAULT_INTER_CHUNK_TIMEOUT: float = 120.0
+    DEFAULT_MAX_ATTEMPTS: int = 2
+
     def __init__(
         self,
         agents: Sequence[Agent] | None = None,
@@ -59,6 +67,9 @@ class SubAgentToolkit(Toolkit):
         stream: bool = True,
         hide_from_parent_card: bool = True,
         name: str = "sub_agent_toolkit",
+        first_chunk_timeout: float | None = None,
+        inter_chunk_timeout: float | None = None,
+        max_attempts: int | None = None,
         **kwargs: Any,
     ) -> None:
         roster = list(agents or sub_agents or ())
@@ -80,6 +91,17 @@ class SubAgentToolkit(Toolkit):
         self.agents_by_name = by_name
         self.stream = stream
         self.hide_from_parent_card = hide_from_parent_card
+        self.first_chunk_timeout = (
+            first_chunk_timeout
+            if first_chunk_timeout is not None
+            else self.DEFAULT_FIRST_CHUNK_TIMEOUT
+        )
+        self.inter_chunk_timeout = (
+            inter_chunk_timeout
+            if inter_chunk_timeout is not None
+            else self.DEFAULT_INTER_CHUNK_TIMEOUT
+        )
+        self.max_attempts = max_attempts if max_attempts is not None else self.DEFAULT_MAX_ATTEMPTS
 
         super().__init__(
             name=name,
@@ -153,15 +175,104 @@ class SubAgentToolkit(Toolkit):
         if resuming:
             run_kwargs["add_history_to_context"] = True
 
+        max_attempts = self.max_attempts
+        first_chunk_timeout = self.first_chunk_timeout
+        inter_chunk_timeout = self.inter_chunk_timeout
+
         pieces: list[str] = []
+        final_completed_content: str | None = None
         if self.stream:
             async with substream(agent_name, description=description, prompt=prompt) as emit:
-                async for chunk in sub_agent.arun(stream=True, **run_kwargs):
-                    await emit(chunk)
-                    text = getattr(chunk, "content", None)
-                    if isinstance(text, str):
-                        pieces.append(text)
+                for attempt in range(1, max_attempts + 1):
+                    pieces = []
+                    final_completed_content = None
+                    chunks_received = 0
+                    timeout_to_use = first_chunk_timeout
+                    phase = "waiting for first token"
+                    try:
+                        stream = sub_agent.arun(stream=True, **run_kwargs)
+                        if hasattr(stream, "__await__") and not hasattr(stream, "__aiter__"):
+                            stream = await stream
+                        stream_iter = stream.__aiter__()
+                        while True:
+                            timeout_to_use = (
+                                first_chunk_timeout if chunks_received == 0 else inter_chunk_timeout
+                            )
+                            phase = (
+                                "waiting for first token"
+                                if chunks_received == 0
+                                else f"after {chunks_received} chunks"
+                            )
+                            try:
+                                chunk = await asyncio.wait_for(
+                                    stream_iter.__anext__(), timeout=timeout_to_use
+                                )
+                            except StopAsyncIteration:
+                                break
+                            chunks_received += 1
+                            await emit(chunk)
+
+                            # Filter chunks to prevent duplicate accumulation when stream_events=True:
+                            raw_event = getattr(chunk, "event", None)
+                            event_str = (
+                                (raw_event.value if hasattr(raw_event, "value") else str(raw_event))
+                                if raw_event is not None
+                                else None
+                            )
+                            if event_str is None:
+                                text = getattr(chunk, "content", None)
+                                if isinstance(text, str):
+                                    pieces.append(text)
+                            else:
+                                if event_str.lower() in ("runcontent", "run_content"):
+                                    text = getattr(chunk, "content", None)
+                                    if isinstance(text, str):
+                                        pieces.append(text)
+                                elif event_str.lower() in ("runcompleted", "run_completed"):
+                                    comp_text = getattr(chunk, "content", None)
+                                    if isinstance(comp_text, str) and comp_text:
+                                        final_completed_content = comp_text
+                        # Finished attempt successfully
+                        break
+                    except TimeoutError as exc:
+                        if attempt < max_attempts:
+                            logger.warning(
+                                "Subagent '%s' stream timed out after %.1fs (%s, attempt %d/%d). Retrying with fresh upstream stream...",
+                                agent_name,
+                                timeout_to_use,
+                                phase,
+                                attempt,
+                                max_attempts,
+                            )
+                            await asyncio.sleep(1.0)
+                            continue
+                        logger.error(
+                            "Subagent '%s' exhausted all %d attempts. Last error: stream timed out after %.1fs (%s).",
+                            agent_name,
+                            max_attempts,
+                            timeout_to_use,
+                            phase,
+                        )
+                        raise TimeoutError(
+                            f"TimeoutError in {agent_name} (attempt {attempt}/{max_attempts}): "
+                            f"upstream model stream timed out after {timeout_to_use:.0f}s of inactivity ({phase})"
+                        ) from exc
+                    except Exception as exc:
+                        if attempt < max_attempts and chunks_received == 0:
+                            logger.warning(
+                                "Subagent '%s' stream failed with %s: %s (attempt %d/%d, zero chunks). Retrying...",
+                                agent_name,
+                                type(exc).__name__,
+                                exc,
+                                attempt,
+                                max_attempts,
+                            )
+                            await asyncio.sleep(1.0)
+                            continue
+                        raise
             content = "".join(pieces).strip()
+            if not content and final_completed_content:
+                content = final_completed_content.strip()
         else:
             response = await sub_agent.arun(stream=False, **run_kwargs)
             content = (getattr(response, "content", None) or "").strip()

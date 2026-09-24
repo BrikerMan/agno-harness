@@ -236,7 +236,12 @@ class EventTranslator:
         # tool-call events describing what it wants are produced by Agno; this
         # adds a machine-readable summary so the client knows which kind of
         # answer each one expects.
-        for descriptor in describe_pause(final_chunk):
+        pause_descriptors = list(describe_pause(final_chunk))
+        is_paused = bool(pause_descriptors) or chunk_event_value(final_chunk) in (
+            "AgentRunPaused",
+            "TeamRunPaused",
+        )
+        for descriptor in pause_descriptors:
             self._stage("run_paused")
             paused = CustomEvent(type=EventType.CUSTOM, name=EVENT_RUN_PAUSED, value=descriptor)
             async for out in self._emit(paused):
@@ -248,7 +253,30 @@ class EventTranslator:
         # before it is framed. The stored chunk is left as it was.
         final_chunk = _without_pause_filler(final_chunk)
         self._stage("completion", chunk_event_value(final_chunk) or None)
+        has_streamed_text = bool(self._accumulated_text)
         for event in process_completion(final_chunk, self.scope.stream_state):
+            if is_paused:
+                etype = getattr(event, "type", None)
+                if has_streamed_text and etype in (
+                    EventType.TEXT_MESSAGE_START,
+                    EventType.TEXT_MESSAGE_CONTENT,
+                    EventType.TEXT_MESSAGE_END,
+                ):
+                    # In a streaming run, text was already sent chunk-by-chunk. Agno's on_run_completed
+                    # synthesizes a duplicate assistant message concatenating the entire turn's text.
+                    continue
+                if etype in (
+                    EventType.TOOL_CALL_START,
+                    EventType.TOOL_CALL_ARGS,
+                    EventType.TOOL_CALL_END,
+                ):
+                    t_id = getattr(event, "tool_call_id", None)
+                    if t_id and t_id in self.sequencer._tools:
+                        # Already emitted during the live run. Drop duplicate start and args.
+                        if etype in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_ARGS):
+                            continue
+                        if etype is EventType.TOOL_CALL_END and self.sequencer._tools[t_id].ended:
+                            continue
             async for out in self._emit(event):
                 yield self._traced(out)
 

@@ -538,6 +538,48 @@ async def test_background_heartbeat_ticks_while_agent_is_silent():
     await settle(manager, "r1")
 
 
+async def test_start_with_empty_thread_id_generates_thread_and_indexes_correctly():
+    agent = FakeAgent(chunks("hello"))
+    manager = manager_for(agent)
+    inp = make_input("hello", run_id="r_auto", thread_id="")
+    handle = await manager.start(inp)
+    assert handle.thread_id
+    assert handle.thread_id != ""
+    assert handle.thread_id.startswith("thread-")
+    # Verify the thread was registered with its actual generated ID, not empty string
+    active = await manager.list_active(handle.thread_id)
+    assert len(active) == 1
+    assert active[0].run_id == "r_auto"
+    empty_active = await manager.list_active("")
+    assert len(empty_active) == 0
+    await settle(manager, "r_auto")
+
+
+async def test_start_resume_extracts_user_input_from_tool_messages():
+    from ag_ui.core.types import ToolMessage as AGUIToolMessage
+
+    agent = FakeAgent(chunks("continuing"))
+    manager = manager_for(agent)
+    tool_msg = AGUIToolMessage(
+        id="tm1",
+        role="tool",
+        content='{"selected_option": "A"}',
+        tool_call_id="call_1",
+    )
+    inp = make_input(
+        "Original question",
+        run_id="r_res",
+        thread_id="t_res",
+        messages=[tool_msg],
+    )
+    handle = await manager.start(inp)
+    assert handle.meta.get("input") == '{"selected_option": "A"}'
+    rec = await manager.log.get_run("r_res")
+    assert rec is not None
+    assert rec.meta.get("input") == '{"selected_option": "A"}'
+    await settle(manager, "r_res")
+
+
 def _rehydrate(events: list[dict]):
     from ag_ui.core import Event
     from pydantic import TypeAdapter
