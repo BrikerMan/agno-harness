@@ -63,7 +63,7 @@ class RelayServer(FastAPI):
         agent_or_runtime: Any | None = None,
         card_catalog: CardCatalog | None = None,
         title: str = "agno-harness Gateway",
-        version: str = "0.2.0",
+        version: str = "0.2.1",
         api_prefix: str = "",
         allow_anonymous: bool = False,
         expose_debug_routes: bool = False,

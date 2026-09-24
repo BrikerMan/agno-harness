@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- **LongRunManager Thread Registration (P0)**: Auto-generate `thread_id` at the start of `start()` when none is provided, avoiding registration under the empty string key `runs:thread:` and ensuring the first turn is immediately queryable via `/frames` and `/active`.
+- **HITL Pause Event Duplication (P1)**: Suppress duplicate `TEXT_MESSAGE_*` events and re-emitted `TOOL_CALL_START` / `TOOL_CALL_ARGS` events during `RunPausedEvent` completion when chunks have already been streamed live, preventing duplicated assistant speech and tool payload echoes.
+- **SSE Stream Protocol & Watermark (P1)**: Include standard SSE `id: {now_ms}-{seq}` watermarks on all live stream frames in `make_agui_router`. Default to long-run detachment mode when `long_runs` is configured, and respect `Last-Event-ID` / `?after=` to resume without replaying entire turn history.
+- **Resume Turn User Input Echo (P2)**: Extract actual user choices and answers from trailing `ToolMessage` payloads via `extract_resume_input` instead of echoing the initial turn's question in `RUN_STARTED` events.
+- **SubAgent Resilience & Timeout**: Added `first_chunk_timeout` (75s default), `inter_chunk_timeout` (120s), and automatic retry (`max_attempts=2`) to `SubAgentToolkit.delegate_subagent`, mitigating upstream model silence and hang issues with detailed error context on exhaustion.
+- **Thread Store Turn Alignment**: Fixed `ThreadStore.start_turn` call to pass `scope.user_text` rather than a `RunAgentInput` object.
+- **Database Engine Ownership**: Added `owns_engine` parameter to `AgnoHarnessPostgresDb` and `SqliteDb` subclasses to control external engine lifecycle management.
+- **Session Fallback**: Safely handle store exceptions in `list_threads` and fall back to `get_sessions` when thread store is uninitialized or empty.
+
+### Changed
+
+- Bump package version to `0.2.1`.
+
 ## 0.2.0
 
 ### Added
