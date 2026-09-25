@@ -163,7 +163,9 @@ class BlockSchema(BaseModel):
         return None
 
     @classmethod
-    async def after_save(cls, target_path: Path, block: Any, run: Any = None) -> Mapping[str, Any] | None:
+    async def after_save(
+        cls, target_path: Path, block: Any, run: Any = None
+    ) -> Mapping[str, Any] | None:
         """Hook called immediately after the block has been written/appended/patched to disk.
 
         Any returned mapping is merged into the ui.block.end event payload.

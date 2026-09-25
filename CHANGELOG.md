@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.3
+
+### Added
+
+- **General-Purpose `WorkspaceToolkit`**:
+  - Safe workspace inspection and exploration toolkit (`read`, `glob`, `grep`, `list_files`) shipped out-of-the-box in `agno_harness.tools`.
+  - Configurable directory resolution: supports dynamic template variables (`workspaces/{user_id}/{thread_id}`), callable resolvers `(scope) -> Path`, and fallback to `RunScope.data["artifact_root_dir"]`.
+  - Custom file resolution hook (`file_resolver: Callable[[Path, str], Path | None]`): allows upstream applications to resolve files across structured subdirectories with automatic sandbox escape checks.
+  - Optional write tools (`allow_write: bool = False`): defaults to strictly read-only inspection. When enabled, registers `write_file` (with append support) and `patch_file` (exact Search & Replace).
+
+### Changed
+
+- **Purified `StreamingArtifactToolkit` (Zero Registered Tools by Default)**:
+  - Removed default tool registrations (`read_artifact_section`, `patch_artifact`, `append_artifact`) so models are forced to stream `<stream-ui>` cards directly instead of blocking streams with JSON tool arguments.
+  - Updated instruction prompt: explicitly emphasizes generating documents and presentations via `<stream-ui>` fences, resuming via `<stream-ui mode="append">`, and using workspace exploration tools for inspecting existing files.
+- Bump package version to `0.2.3`.
+
 ## 0.2.2
 
 ### Added

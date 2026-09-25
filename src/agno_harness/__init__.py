@@ -192,6 +192,7 @@ from .tools import (
     SubAgentTool,
     SubAgentToolkit,
     TodoToolkit,
+    WorkspaceToolkit,
     append_artifact,
     apply_patch_block,
     apply_search_replace,
@@ -204,7 +205,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 
 def __getattr__(name: str) -> Any:
@@ -395,6 +396,7 @@ __all__ = [
     "TransformResultFilter",
     "UserQueryBuilder",
     "WebChannel",
+    "WorkspaceToolkit",
     "__version__",
     "append_artifact",
     "apply_patch_block",

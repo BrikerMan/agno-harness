@@ -592,9 +592,6 @@ class StreamingArtifactToolkit(Toolkit):
             instructions=ToolInstruction(instruction_text),
             add_instructions=add_instructions,
         )
-        self.register(self.read_artifact_section)
-        self.register(self.patch_artifact)
-        self.register(self.append_artifact)
         if self.include_stream_tool:
             self.register(self.stream_artifact)
 
@@ -699,7 +696,7 @@ class StreamingArtifactToolkit(Toolkit):
     def _render_instructions(cls) -> str:
         return """\
 When generating or modifying long-form documents, reports, proposals, full-file code, or presentation decks:
-1. NEVER call traditional file write or edit tools (such as `write_file` or `edit_file`) with massive content. Putting thousands of lines inside an unclosed JSON argument blocks the stream and causes a multi-minute UI freeze.
+1. NEVER call traditional file write or edit tools with massive content. Putting thousands of lines inside a JSON tool argument blocks the stream and causes a multi-minute UI freeze.
 2. For long documents, reports, or proposals (Markdown/text), output directly using the `artifact` StreamUI block:
    <stream-ui>
    {"schema": "artifact", "title": "Report Title", "path": "reports/summary.md"}
@@ -726,11 +723,10 @@ When generating or modifying long-form documents, reports, proposals, full-file 
    Always include `<!-- SLIDE: X - Title -->` comments before each slide section so real-time progress is rendered on the user's card.
 4. Continuing an interrupted/truncated generation:
    If an artifact was cut off mid-stream, DO NOT regenerate the entire file from the beginning.
-   Instead, call `append_artifact(filepath, content)` or stream with `{"schema": "...", "mode": "append"}` to resume from where it stopped.
-5. Inspecting before editing:
-   To inspect lines in an existing artifact, call `read_artifact_section(filepath, start_line, line_count, query)`. Never dump the entire 3000-line file into your prompt context.
-6. Modifying an existing file (1 -> N edits):
-   NEVER rewrite the whole file from scratch. Use `patch_artifact(filepath, search_block, replace_block)` with exact Search & Replace blocks. This is fast, token-efficient, and automatically renders a visual Diff card in the chat.
+   Instead, resume generation by streaming remaining content using `{"schema": "...", "mode": "append"}` to resume seamlessly from where it stopped.
+5. All file persistence and post-processing (such as PPTX conversion) is automatically handled by the runtime upon closing the block.
+6. Inspecting existing files:
+   Use workspace exploration tools (`read`, `glob`, `grep`, `list_files`) to inspect existing reports and materials before generating new deliverables.
 """
 
 

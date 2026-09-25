@@ -478,9 +478,7 @@ class StreamUIModule(Module):
 
         # 6. Secondary target_schema complete and after_save hook (for diff/patch cards)
         target_schema = (
-            block.props.get("target_schema")
-            if block and getattr(block, "props", None)
-            else None
+            block.props.get("target_schema") if block and getattr(block, "props", None) else None
         )
         if target_schema and self.catalog is not None:
             target_cls = getattr(self.catalog, "_blocks", {}).get(target_schema)

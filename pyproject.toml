@@ -1,6 +1,6 @@
 [project]
 name = "agno-harness"
-version = "0.2.2"
+version = "0.2.3"
 description = "Enterprise agent scaffolding: you write the business and the cards; resume, compression, and channels are production-ready"
 readme = "README.md"
 requires-python = ">=3.11"

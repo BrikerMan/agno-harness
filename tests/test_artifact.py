@@ -67,6 +67,13 @@ def test_streaming_artifact_toolkit_instructions():
     assert "artifact" in instructions
     assert "presentation_deck" in instructions
     assert "NEVER call traditional file write or edit tools" in instructions
+    # Zero tools registered by default to force card streaming over LLM write tool calls
+    assert len(toolkit.functions) == 0
+    assert len(toolkit.async_functions) == 0
+
+    toolkit_with_stream = StreamingArtifactToolkit(include_stream_tool=True)
+    assert len(toolkit_with_stream.async_functions) == 1
+    assert "stream_artifact" in toolkit_with_stream.async_functions
 
 
 @pytest.mark.asyncio
@@ -562,4 +569,3 @@ async def test_streamui_mode_patch_fence(tmp_path: Path):
     new_content = report_file.read_text(encoding="utf-8")
     assert "Section 1 revised content with details." in new_content
     assert "Section 2 original content." in new_content
-
