@@ -11,7 +11,13 @@ from agno_harness.tools.workspace import WorkspaceToolkit
 
 def test_workspace_toolkit_initialization():
     toolkit_ro = WorkspaceToolkit(allow_write=False)
-    assert set(toolkit_ro.functions.keys()) == {"read", "glob", "grep", "list_files"}
+    assert set(toolkit_ro.functions.keys()) == {
+        "read",
+        "glob",
+        "grep",
+        "list_files",
+        "list_artifacts",
+    }
     assert "File modification tools are disabled" in str(toolkit_ro.instructions)
 
     toolkit_rw = WorkspaceToolkit(allow_write=True)
@@ -20,6 +26,7 @@ def test_workspace_toolkit_initialization():
         "glob",
         "grep",
         "list_files",
+        "list_artifacts",
         "write_file",
         "patch_file",
     }
@@ -147,6 +154,9 @@ def test_list_files(tmp_path: Path):
     res = tk.list_files()
     assert "file1.txt" in res
     assert "file2.md" in res
+
+    arts = tk.list_artifacts()
+    assert "file2.md" in arts
 
 
 def test_write_and_patch(tmp_path: Path):

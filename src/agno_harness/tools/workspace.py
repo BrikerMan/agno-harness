@@ -83,6 +83,7 @@ class WorkspaceToolkit(Toolkit):
         self.register(self.glob, name="glob")
         self.register(self.grep, name="grep")
         self.register(self.list_files, name="list_files")
+        self.register(self.list_artifacts, name="list_artifacts")
 
         if self.allow_write:
             self.register(self.write_file, name="write_file")
@@ -113,6 +114,17 @@ class WorkspaceToolkit(Toolkit):
     def resolve_workspace_root(self, run_context: RunContext | None = None) -> Path:
         """Resolve the active workspace root directory against current RunScope or RunContext."""
         scope = current_scope()
+        if scope is None and run_context is not None:
+            session_state = getattr(run_context, "session_state", None) or {}
+            user_id = session_state.get("user_id")
+            thread_id = session_state.get("thread_id") or getattr(run_context, "session_id", None)
+            from ..runtime.translator import make_run_scope
+
+            scope = make_run_scope(
+                thread_id=str(thread_id).strip() if thread_id else "default",
+                user_id=str(user_id).strip() if user_id else None,
+            )
+
         if self.workspace_dir is not None:
             return resolve_artifact_dir(self.workspace_dir, scope)
 
@@ -120,24 +132,24 @@ class WorkspaceToolkit(Toolkit):
             return resolve_artifact_dir(scope.data["artifact_root_dir"], scope)
 
         # Fallback using scope or run_context
-        thread_id: str | None = None
-        user_id: str | None = None
+        thread_id_val: str | None = None
+        user_id_val: str | None = None
         if scope:
-            thread_id = scope.thread_id
-            user_id = scope.user_id
+            thread_id_val = scope.thread_id
+            user_id_val = scope.user_id
 
         if run_context:
             session_state = getattr(run_context, "session_state", None) or {}
-            user_id = user_id or session_state.get("user_id")
-            thread_id = (
-                thread_id
+            user_id_val = user_id_val or session_state.get("user_id")
+            thread_id_val = (
+                thread_id_val
                 or session_state.get("thread_id")
                 or getattr(run_context, "session_id", None)
             )
 
         template = "workspaces/{user_id}/{thread_id}"
-        expanded = template.replace("{user_id}", user_id or "default").replace(
-            "{thread_id}", thread_id or "default"
+        expanded = template.replace("{user_id}", user_id_val or "default").replace(
+            "{thread_id}", thread_id_val or "default"
         )
         return Path(expanded).expanduser().resolve()
 
@@ -411,6 +423,28 @@ class WorkspaceToolkit(Toolkit):
         if self.max_matches is not None and len(files) > self.max_matches:
             lines.append(f"  ... ({len(files) - self.max_matches} more files)")
         return "\n".join(lines)
+
+    def list_artifacts(self, run_context: RunContext | None = None) -> str:
+        """List all generated deliverable artifacts (.md, .pptx, .html, .pdf, .json, etc.) in workspace."""
+        root = self.resolve_workspace_root(run_context)
+        if not root.exists():
+            return "No artifacts found in the current workspace."
+        valid_exts = {".md", ".pptx", ".html", ".pdf", ".json", ".csv", ".txt"}
+        try:
+            files: list[str] = []
+            for p in sorted(root.rglob("*")):
+                if p.is_file() and p.suffix.lower() in valid_exts and not self._is_hidden(p):
+                    files.append(p.relative_to(root).as_posix())
+                    if self.max_matches and len(files) >= self.max_matches:
+                        break
+            if not files:
+                return "No artifacts found in the current workspace."
+            lines = ["Available artifacts in workspace:"]
+            for f in sorted(files):
+                lines.append(f"  - `{f}`")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"Error listing artifacts: {exc}"
 
     # ------------------------------------------------------------------
     # Optional Write Tools (registered only when allow_write=True)
