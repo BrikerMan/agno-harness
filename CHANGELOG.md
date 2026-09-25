@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.2
+
+### Added
+
+- **Unified Artifact Lifecycle (write, append, patch)**:
+  - `StreamUIModule._finish_block` natively supports three artifact persistence modes: full overwrite (`mode="write"`), incremental append (`mode="append"`), and exact diff patch (`mode="patch"`).
+  - Added `persisted=True` block prop awareness: when an artifact file has already been saved to disk by a tool call, `StreamUIModule` avoids redundant re-writing and properly updates file metadata (`savedPath`, `relativePath`, `bytes`) while continuing the card event stream.
+  - Added `BlockSchema.persists` and `CardCatalog.should_persist(name)`: allows non-persisted review schemas (such as `DiffCard`) to bypass file saving, avoiding destructive file overrides.
+  - Added `DiffCard` (`schema_name="diff"`, `persists=False`) to standard artifact schemas.
+  - Added `BlockSchema.before_save` and `after_save` lifecycle hooks, ensuring downstream post-processing (such as document compilers or slide-to-pptx converters) execute strictly after the physical file has safely landed on disk.
+  - Linked post-patch re-transcoding: when a `diff` block provides `target_schema`, `StreamUIModule` triggers `after_save` and `on_complete` hooks of the target schema on the modified file.
+
+### Fixed
+
+- **Artifact Tool & StreamUI Lifecycle Disconnect**:
+  - `append_artifact` now invokes `ui_block(schema, mode="append", persisted=True)` upon appending to disk, emitting real-time slide/item progress and triggering downstream compilers.
+  - `patch_artifact` safely replaces targeted text chunks without corrupting the file with raw diff fences, and emits a standard `DiffCard` stream for UI inspection.
+  - Prevented `StreamUIModule` from writing raw git diff hunks directly over target source files when `ui_block("diff")` finishes.
+
+### Changed
+
+- Bump package version to `0.2.2`.
+
 ## 0.2.1
 
 ### Fixed

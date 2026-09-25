@@ -204,7 +204,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 def __getattr__(name: str) -> Any:
@@ -397,6 +397,8 @@ __all__ = [
     "WebChannel",
     "__version__",
     "append_artifact",
+    "apply_patch_block",
+    "apply_search_replace",
     "attach_checkpoint_to_session",
     "close_dangling_tool_calls",
     "compression_events_parser",
