@@ -2,10 +2,13 @@
 
 from .artifact import (
     ArtifactCard,
+    DiffCard,
     PresentationDeck,
     SlideProgressItem,
     StreamingArtifactToolkit,
     append_artifact,
+    apply_patch_block,
+    apply_search_replace,
     emit_artifact,
     patch_artifact,
     read_artifact_section,
@@ -26,6 +29,7 @@ from .todo import (
 
 __all__ = [
     "ArtifactCard",
+    "DiffCard",
     "ExaTools",
     "PresentationDeck",
     "STATE_TO_MARKER",
@@ -41,6 +45,8 @@ __all__ = [
     "TODO_MARKERS",
     "TodoToolkit",
     "append_artifact",
+    "apply_patch_block",
+    "apply_search_replace",
     "emit_artifact",
     "format_todo_list",
     "parse_todo_list",

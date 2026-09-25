@@ -362,28 +362,44 @@ class StreamUIModule(Module):
         block = self.data(run).get("blocks", {}).get(block_id)
         schema = block.schema if block else None
 
+        # Look up schema class from catalog if available
+        schema_cls: type[Any] | None = None
         if self.catalog is not None and schema:
+            schema_cls = getattr(self.catalog, "_blocks", {}).get(schema)
+
+        # 1. IPV / StreamUI before_save hook
+        if schema_cls and hasattr(schema_cls, "before_save"):
             try:
-                res = await self.catalog.complete(schema, block, run)
-                if isinstance(res, Mapping):
-                    value.update(res)
+                pre_res = await schema_cls.before_save(block, run)
+                if isinstance(pre_res, Mapping):
+                    value.update(pre_res)
             except Exception as exc:
-                value["completionError"] = f"{type(exc).__name__}: {exc}"
+                value["beforeSaveError"] = f"{type(exc).__name__}: {exc}"
 
+        # 2. Check persistence permission
+        should_persist = True
+        if schema == "diff":
+            should_persist = False
+        elif self.catalog is not None and schema:
+            should_persist = self.catalog.should_persist(schema)
+        elif schema_cls and hasattr(schema_cls, "should_persist"):
+            should_persist = schema_cls.should_persist()
+
+        saved_target_path: Path | None = None
+
+        # 3. File persistence to artifact_root_dir
         if (
-            block
-            and block.text
-            and self.catalog is not None
-            and schema
-            and not self.catalog.should_emit_text(schema)
+            should_persist
+            and self.artifact_root_dir is not None
+            and block
+            and (block.text or (block.props and block.props.get("persisted")))
         ):
-            value["text"] = block.text
-
-        if self.artifact_root_dir is not None and block and block.text:
             rel_path = (
                 block.props.get("filepath")
                 or block.props.get("filename")
                 or block.props.get("path")
+                or block.props.get("filePath")
+                or block.props.get("fileName")
             )
             if rel_path and isinstance(rel_path, str):
                 try:
@@ -401,26 +417,114 @@ class StreamUIModule(Module):
                             f"Security error: path {rel_path!r} escapes artifact_root_dir {root_path}"
                         )
                     else:
-                        target_path.parent.mkdir(parents=True, exist_ok=True)
-                        mode = str(block.props.get("mode", "write")).lower()
-                        if mode == "append" and target_path.exists():
-                            with target_path.open("a", encoding="utf-8") as f:
-                                f.write(block.text)
-                            if (
-                                self.catalog is not None
-                                and schema
-                                and not self.catalog.should_emit_text(schema)
-                            ):
-                                value["text"] = target_path.read_text(encoding="utf-8")
-                        else:
-                            target_path.write_text(block.text, encoding="utf-8")
-                        value["savedPath"] = str(target_path)
-                        value["relativePath"] = clean_rel
-                        value["bytes"] = target_path.stat().st_size
+                        already_persisted = bool(block.props.get("persisted", False))
+                        if not already_persisted:
+                            target_path.parent.mkdir(parents=True, exist_ok=True)
+                            mode = str(block.props.get("mode", "write")).lower()
+                            if mode == "append" and target_path.exists():
+                                with target_path.open("a", encoding="utf-8") as f:
+                                    f.write(block.text)
+                                if (
+                                    self.catalog is not None
+                                    and schema
+                                    and not self.catalog.should_emit_text(schema)
+                                ):
+                                    value["text"] = target_path.read_text(encoding="utf-8")
+                            elif mode in ("patch", "diff") and target_path.exists():
+                                from ...tools.artifact import apply_patch_block
+
+                                old_text = target_path.read_text(encoding="utf-8")
+                                new_text, err = apply_patch_block(old_text, block.text)
+                                if err:
+                                    value["patchError"] = err
+                                else:
+                                    target_path.write_text(new_text, encoding="utf-8")
+                                    if (
+                                        self.catalog is not None
+                                        and schema
+                                        and not self.catalog.should_emit_text(schema)
+                                    ):
+                                        value["text"] = new_text
+                            else:
+                                target_path.write_text(block.text, encoding="utf-8")
+
+                        if target_path.exists():
+                            saved_target_path = target_path
+                            value["savedPath"] = str(target_path)
+                            value["relativePath"] = clean_rel
+                            value["bytes"] = target_path.stat().st_size
                 except Exception as exc:
                     value["persistenceError"] = (
                         f"Failed to save artifact: {type(exc).__name__}: {exc}"
                     )
+
+        # 4. after_save hook (runs AFTER the file is safely persisted on disk)
+        if schema_cls and hasattr(schema_cls, "after_save") and saved_target_path is not None:
+            try:
+                post_res = await schema_cls.after_save(saved_target_path, block, run)
+                if isinstance(post_res, Mapping):
+                    value.update(post_res)
+            except Exception as exc:
+                value["afterSaveError"] = f"{type(exc).__name__}: {exc}"
+
+        # 5. Catalog complete hook for the primary schema
+        if self.catalog is not None and schema:
+            try:
+                res = await self.catalog.complete(schema, block, run)
+                if isinstance(res, Mapping):
+                    value.update(res)
+            except Exception as exc:
+                value["completionError"] = f"{type(exc).__name__}: {exc}"
+
+        # 6. Secondary target_schema complete and after_save hook (for diff/patch cards)
+        target_schema = (
+            block.props.get("target_schema")
+            if block and getattr(block, "props", None)
+            else None
+        )
+        if target_schema and self.catalog is not None:
+            target_cls = getattr(self.catalog, "_blocks", {}).get(target_schema)
+            # Resolve target file path if not already resolved
+            if saved_target_path is None and self.artifact_root_dir is not None:
+                rel_path = block.props.get("path") or block.props.get("filepath")
+                if rel_path:
+                    try:
+                        root_path = resolve_artifact_dir(self.artifact_root_dir, run)
+                        clean_rel = rel_path.strip().lstrip("/\\")
+                        if clean_rel.startswith("./"):
+                            clean_rel = clean_rel[2:].lstrip("/\\")
+                        t_path = (root_path / clean_rel).resolve()
+                        if t_path.exists() and t_path.is_relative_to(root_path):
+                            saved_target_path = t_path
+                    except Exception:
+                        pass
+
+            if target_cls and hasattr(target_cls, "after_save") and saved_target_path is not None:
+                try:
+                    post_res = await target_cls.after_save(saved_target_path, block, run)
+                    if isinstance(post_res, Mapping):
+                        value.update(post_res)
+                except Exception as exc:
+                    value["targetAfterSaveError"] = f"{type(exc).__name__}: {exc}"
+
+            if self.catalog.has_on_complete(target_schema):
+                try:
+                    res = await self.catalog.complete(target_schema, block, run)
+                    if isinstance(res, Mapping):
+                        value.update(res)
+                except Exception as exc:
+                    value["targetCompletionError"] = f"{type(exc).__name__}: {exc}"
+
+        # 7. Ensure value["text"] for non-emitted blocks
+        if (
+            block
+            and block.text
+            and self.catalog is not None
+            and schema
+            and not self.catalog.should_emit_text(schema)
+            and "text" not in value
+        ):
+            value["text"] = block.text
 
     # ── the tool path ─────────────────────────────────────────────────────
 

@@ -90,6 +90,25 @@ class PresentationDeck(BlockSchema):
         return None
 
 
+class DiffCard(BlockSchema):
+    """Visual diff comparison card for Search & Replace patches.
+
+    persists is False so that diff text never overwrites the target file.
+    """
+
+    schema_name = "diff"
+    body = "text"
+    emit_text = True
+    include_in_system_prompt = False
+    persists = False
+
+    path: str
+    title: str | None = None
+    target_schema: str | None = None
+    filepath: str | None = None
+    mode: str | None = "diff"
+
+
 class ToolInstruction(str):
     """A string that can also be called like a method: instruction() -> str."""
 
@@ -253,6 +272,103 @@ def _read_artifact_section(
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
+_PATCH_BLOCK_RE = re.compile(
+    r"<{3,}\s*SEARCH[^\n]*\n(.*?)\n={3,}[^\n]*\n(.*?)\n>{3,}[^\n]*",
+    re.DOTALL,
+)
+
+
+def apply_search_replace(
+    old_content: str,
+    search_block: str,
+    replace_block: str,
+) -> tuple[str | None, str | None, dict[str, Any]]:
+    """Safely apply a single Search & Replace block.
+
+    Returns:
+        (new_content, error_message, metadata)
+    """
+    count = old_content.count(search_block)
+    match_index = -1
+    matched_search = search_block
+
+    if count == 1:
+        match_index = old_content.find(search_block)
+    elif count > 1:
+        lines = old_content.splitlines(keepends=True)
+        search_first_line = search_block.splitlines()[0] if search_block.splitlines() else ""
+        candidate_lines = [
+            i + 1
+            for i, line in enumerate(lines)
+            if search_first_line and search_first_line.strip() in line
+        ]
+        return (
+            None,
+            f"search_block matched {count} times in file. Provide more surrounding context lines to make the match unique.",
+            {"candidate_lines": candidate_lines[:10]},
+        )
+    else:
+        # Fallback: line-by-line whitespace-trimmed search
+        lines = old_content.splitlines(keepends=True)
+        search_lines = search_block.splitlines()
+        for i in range(len(lines) - len(search_lines) + 1):
+            chunk = [lines[i + j].rstrip("\r\n").rstrip() for j in range(len(search_lines))]
+            if chunk == [sl.rstrip() for sl in search_lines]:
+                match_index = sum(len(lines[k]) for k in range(i))
+                matched_search = "".join(lines[i : i + len(search_lines)])
+                break
+
+    if match_index < 0:
+        return (
+            None,
+            "search_block was not found in file. Use read_artifact_section to inspect the exact lines.",
+            {"hint": "Ensure exact matching of lines, indentation, and punctuation."},
+        )
+
+    new_content = (
+        old_content[:match_index] + replace_block + old_content[match_index + len(matched_search) :]
+    )
+    start_line = old_content[:match_index].count("\n") + 1
+    lines_removed = len(matched_search.splitlines())
+    lines_added = len(replace_block.splitlines())
+    end_line = start_line + max(0, lines_removed - 1)
+
+    meta = {
+        "start_line": start_line,
+        "end_line": end_line,
+        "lines_added": lines_added,
+        "lines_removed": lines_removed,
+        "matched_search": matched_search,
+    }
+    return new_content, None, meta
+
+
+def apply_patch_block(old_text: str, patch_text: str) -> tuple[str, str | None]:
+    """Parse and apply one or more Search & Replace blocks from patch_text.
+
+    Supports standard format:
+    <<<< SEARCH
+    lines to replace
+    ====
+    new lines
+    >>>>
+    """
+    matches = list(_PATCH_BLOCK_RE.finditer(patch_text))
+    if not matches:
+        return old_text, "No valid <<<< SEARCH ... ==== ... >>>> blocks found in patch text."
+
+    content = old_text
+    for i, match in enumerate(matches, 1):
+        search_block = match.group(1)
+        replace_block = match.group(2)
+        new_content, err, _ = apply_search_replace(content, search_block, replace_block)
+        if err:
+            return old_text, f"Patch block {i} failed: {err}"
+        if new_content is not None:
+            content = new_content
+    return content, None
+
+
 async def _patch_artifact(
     filepath: str,
     search_block: str,
@@ -287,62 +403,17 @@ async def _patch_artifact(
             indent=2,
         )
 
-    count = old_content.count(search_block)
-    match_index = -1
-    matched_search = search_block
+    new_content, err, meta = apply_search_replace(old_content, search_block, replace_block)
+    if err or new_content is None:
+        err_res = {
+            "status": "error",
+            "filepath": filepath,
+            "error": err,
+            **meta,
+        }
+        return json.dumps(err_res, ensure_ascii=False, indent=2)
 
-    if count == 1:
-        match_index = old_content.find(search_block)
-    elif count > 1:
-        lines = old_content.splitlines(keepends=True)
-        search_first_line = search_block.splitlines()[0] if search_block.splitlines() else ""
-        candidate_lines = [
-            i + 1
-            for i, line in enumerate(lines)
-            if search_first_line and search_first_line.strip() in line
-        ]
-        return json.dumps(
-            {
-                "status": "error",
-                "filepath": filepath,
-                "error": f"search_block matched {count} times in file. Provide more surrounding context lines to make the match unique.",
-                "candidate_lines": candidate_lines[:10],
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    else:
-        # Fallback: line-by-line whitespace-trimmed search
-        lines = old_content.splitlines(keepends=True)
-        search_lines = search_block.splitlines()
-        for i in range(len(lines) - len(search_lines) + 1):
-            chunk = [lines[i + j].rstrip("\r\n").rstrip() for j in range(len(search_lines))]
-            if chunk == [sl.rstrip() for sl in search_lines]:
-                match_index = sum(len(lines[k]) for k in range(i))
-                matched_search = "".join(lines[i : i + len(search_lines)])
-                break
-
-    if match_index < 0:
-        return json.dumps(
-            {
-                "status": "error",
-                "filepath": filepath,
-                "error": "search_block was not found in file. Use read_artifact_section to inspect the exact lines.",
-                "hint": "Ensure exact matching of lines, indentation, and punctuation.",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-
-    new_content = (
-        old_content[:match_index] + replace_block + old_content[match_index + len(matched_search) :]
-    )
-
-    start_line = old_content[:match_index].count("\n") + 1
-    lines_removed = len(matched_search.splitlines())
-    lines_added = len(replace_block.splitlines())
-    end_line = start_line + max(0, lines_removed - 1)
-
+    matched_search = meta["matched_search"]
     diff_lines = list(
         difflib.unified_diff(
             matched_search.splitlines(keepends=True),
@@ -356,25 +427,38 @@ async def _patch_artifact(
 
     target_path.write_text(new_content, encoding="utf-8")
 
-    try:
-        async with ui_block("diff", path=filepath, title=title or f"Patch {filepath}") as block:
-            await block.text(diff_text)
-    except Exception:
-        pass
+    from ..runtime.sidechannel import current_channel
+
+    channel = current_channel()
+    if channel is not None and getattr(channel, "enabled", True):
+        is_html = filepath.lower().endswith((".html", ".htm"))
+        target_schema = PresentationDeck.schema_name if is_html else ArtifactCard.schema_name
+        try:
+            async with ui_block(
+                "diff",
+                path=filepath,
+                filepath=filepath,
+                title=title or f"Patch {filepath}",
+                target_schema=target_schema,
+                persisted=True,
+            ) as block:
+                await block.text(diff_text)
+        except Exception:
+            pass
 
     result = {
         "status": "success",
         "action": "patch",
         "filepath": filepath,
         "saved_path": str(target_path),
-        "replaced_lines_span": [start_line, end_line],
-        "lines_added": lines_added,
-        "lines_removed": lines_removed,
+        "replaced_lines_span": [meta["start_line"], meta["end_line"]],
+        "lines_added": meta["lines_added"],
+        "lines_removed": meta["lines_removed"],
         "file_size_bytes": target_path.stat().st_size,
         "total_lines": len(new_content.splitlines()),
         "summary": (
-            f"Successfully patched {filepath}: replaced lines {start_line}-{end_line} "
-            f"(-{lines_removed}/+{lines_added} lines)."
+            f"Successfully patched {filepath}: replaced lines {meta['start_line']}-{meta['end_line']} "
+            f"(-{meta['lines_removed']}/+{meta['lines_added']} lines)."
         ),
     }
     return json.dumps(result, ensure_ascii=False, indent=2)
@@ -407,6 +491,31 @@ async def _append_artifact(
     is_html = filepath.lower().endswith((".html", ".htm"))
     is_complete_html = ("</html>" in full_content.lower()) if is_html else None
     slide_matches = _SLIDE_PAGE_RE.findall(full_content)
+
+    from ..runtime.sidechannel import current_channel
+
+    channel = current_channel()
+    if channel is not None and getattr(channel, "enabled", True):
+        schema = PresentationDeck.schema_name if is_html else ArtifactCard.schema_name
+        props: dict[str, Any] = {
+            "filepath": filepath,
+            "path": filepath,
+            "mode": "append",
+            "persisted": True,
+            "title": f"Append {Path(filepath).name}",
+        }
+        try:
+            async with ui_block(schema, **props) as block:
+                if is_html:
+                    from ..runtime.modules.streamui import emit_item
+
+                    for match in _SLIDE_PAGE_RE.finditer(content):
+                        page = int(match.group(1))
+                        slide_title = match.group(2).strip() if match.group(2) else None
+                        await emit_item("slide_progress", {"page": page, "title": slide_title})
+                await block.text(content)
+        except Exception:
+            pass
 
     result = {
         "status": "success",
@@ -627,10 +736,13 @@ When generating or modifying long-form documents, reports, proposals, full-file 
 
 __all__ = [
     "ArtifactCard",
+    "DiffCard",
     "PresentationDeck",
     "SlideProgressItem",
     "StreamingArtifactToolkit",
     "append_artifact",
+    "apply_patch_block",
+    "apply_search_replace",
     "emit_artifact",
     "patch_artifact",
     "read_artifact_section",

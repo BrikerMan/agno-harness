@@ -402,3 +402,164 @@ async def test_streamui_mode_append_persistence(tmp_path: Path):
     assert "<!-- SLIDE: 3 -->" in full_text
     assert "<!-- SLIDE: 4 -->" in full_text
     assert "</html>" in full_text
+
+
+@pytest.mark.asyncio
+async def test_append_artifact_triggers_ui_block_items_and_on_complete(tmp_path: Path):
+    """Calling append_artifact inside AgentRuntime must emit UI events and trigger on_complete."""
+    completed_events = []
+    catalog = CardCatalog([PresentationDeck])
+
+    @catalog.on_complete("presentation_deck")
+    async def on_deck_complete(block, scope):
+        completed_events.append(block)
+        return {"conversion": "success"}
+
+    art_dir = tmp_path / "{task-id}"
+    deck_file = tmp_path / "thread-1" / "deck.html"
+    deck_file.parent.mkdir(parents=True, exist_ok=True)
+    deck_file.write_text("<html>\n<!-- SLIDE: 1 - Cover -->\n<div>Page 1</div>\n", encoding="utf-8")
+
+    runtime = AgentRuntime(
+        agent=FakeAgent([]),
+        catalog=catalog,
+        sequencer_mode=SequencerMode.AUDIT,
+        artifact_root_dir=str(art_dir),
+    )
+
+    async def run_tool(**kwargs):
+        res = await append_artifact(
+            "deck.html",
+            "<!-- SLIDE: 2 - Architecture -->\n<div>Page 2</div>\n</html>\n",
+        )
+        assert "success" in res
+        yield run_completed()
+
+    runtime.agent.arun = lambda **kwargs: run_tool(**kwargs)
+    inp = make_input("Append deck", thread_id="thread-1")
+    events = await collect(runtime.stream_events(inp))
+
+    # ui.block.start must have schema "presentation_deck" and mode "append"
+    starts = customs(events, "ui.block.start")
+    assert len(starts) == 1
+    assert starts[0].value["schema"] == "presentation_deck"
+    assert starts[0].value["props"]["mode"] == "append"
+
+    # ui.item must emit slide progress for the appended slide
+    items = customs(events, "ui.item")
+    assert len(items) == 1
+    assert items[0].value["data"] == {"page": 2, "title": "Architecture"}
+
+    # ui.block.end must show savedPath and the on_complete payload
+    ends = customs(events, "ui.block.end")
+    assert len(ends) == 1
+    assert ends[0].value.get("conversion") == "success"
+
+    # on_complete handler was called
+    assert len(completed_events) == 1
+
+    # File on disk has both slides, NOT duplicated
+    full_content = deck_file.read_text(encoding="utf-8")
+    assert "<!-- SLIDE: 1 - Cover -->" in full_content
+    assert "<!-- SLIDE: 2 - Architecture -->" in full_content
+    assert "</html>" in full_content
+
+
+@pytest.mark.asyncio
+async def test_patch_artifact_preserves_content_and_triggers_target_on_complete(tmp_path: Path):
+    """patch_artifact must not overwrite file with diff text, and must trigger target_schema completion."""
+    completed_events = []
+    catalog = CardCatalog([PresentationDeck])
+
+    @catalog.on_complete("presentation_deck")
+    async def on_deck_complete(block, scope):
+        completed_events.append(block)
+        return {"recompiled": True}
+
+    art_dir = tmp_path / "{task-id}"
+    deck_file = tmp_path / "thread-1" / "deck.html"
+    deck_file.parent.mkdir(parents=True, exist_ok=True)
+    deck_file.write_text(
+        "<html>\n<!-- SLIDE: 1 - Old Title -->\n<div>Content</div>\n</html>\n", encoding="utf-8"
+    )
+
+    runtime = AgentRuntime(
+        agent=FakeAgent([]),
+        catalog=catalog,
+        sequencer_mode=SequencerMode.AUDIT,
+        artifact_root_dir=str(art_dir),
+    )
+
+    async def run_tool(**kwargs):
+        res = await patch_artifact(
+            "deck.html",
+            "<!-- SLIDE: 1 - Old Title -->",
+            "<!-- SLIDE: 1 - New Title -->",
+        )
+        assert "success" in res
+        yield run_completed()
+
+    runtime.agent.arun = lambda **kwargs: run_tool(**kwargs)
+    inp = make_input("Patch deck", thread_id="thread-1")
+    events = await collect(runtime.stream_events(inp))
+
+    # ui.block.start must have schema "diff"
+    starts = customs(events, "ui.block.start")
+    assert len(starts) == 1
+    assert starts[0].value["schema"] == "diff"
+
+    # ui.block.end must include payload from target_schema on_complete
+    ends = customs(events, "ui.block.end")
+    assert len(ends) == 1
+    assert ends[0].value.get("recompiled") is True
+
+    # on_complete for presentation_deck was triggered
+    assert len(completed_events) == 1
+
+    # CRITICAL: File on disk must NOT be overwritten by unified diff text!
+    full_content = deck_file.read_text(encoding="utf-8")
+    assert "--- a/deck.html" not in full_content
+    assert "<!-- SLIDE: 1 - New Title -->" in full_content
+    assert "<div>Content</div>" in full_content
+
+
+@pytest.mark.asyncio
+async def test_streamui_mode_patch_fence(tmp_path: Path):
+    """Streaming a mode='patch' fence block safely modifies an existing artifact."""
+    catalog = CardCatalog([ArtifactCard])
+    art_dir = tmp_path / "{task-id}"
+    report_file = tmp_path / "thread-1" / "report.md"
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text(
+        "# Title\n\nSection 1 original content.\n\nSection 2 original content.\n",
+        encoding="utf-8",
+    )
+
+    runtime = AgentRuntime(
+        agent=FakeAgent([]),
+        catalog=catalog,
+        sequencer_mode=SequencerMode.AUDIT,
+        artifact_root_dir=str(art_dir),
+    )
+
+    patch_stream = (
+        "<stream-ui>\n"
+        '{"schema": "artifact", "path": "report.md", "mode": "patch"}\n'
+        "<<<< SEARCH\n"
+        "Section 1 original content.\n"
+        "====\n"
+        "Section 1 revised content with details.\n"
+        ">>>>\n"
+        "</stream-ui>\n"
+    )
+
+    agent = FakeAgent([content(patch_stream), run_completed()])
+    runtime.agent = agent
+    runtime.runner.agent = agent
+    inp = make_input("Patch report", thread_id="thread-1")
+    await collect(runtime.stream_events(inp))
+
+    new_content = report_file.read_text(encoding="utf-8")
+    assert "Section 1 revised content with details." in new_content
+    assert "Section 2 original content." in new_content
+

@@ -25,6 +25,7 @@ import contextlib
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Iterable, Mapping
+from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal, cast, get_args, get_origin
 from urllib.parse import urlparse
 
@@ -107,6 +108,10 @@ class BlockSchema(BaseModel):
     #: or skill-specific cards that are injected on-demand.
     include_in_system_prompt: ClassVar[bool] = True
 
+    #: Whether this block should be automatically persisted to disk if artifact_root_dir is configured.
+    #: True for artifact, presentation_deck. Set to False for ephemeral cards (e.g. diff).
+    persists: ClassVar[bool] = True
+
     #: Item type for a homogeneous block, letting its lines omit ``schema``.
     item: ClassVar[type[BaseModel] | None] = None
 
@@ -138,10 +143,30 @@ class BlockSchema(BaseModel):
         return cls.include_in_system_prompt
 
     @classmethod
+    def should_persist(cls) -> bool:
+        return cls.persists
+
+    @classmethod
     def parse_line(cls, line: str, block: Any) -> Mapping[str, Any] | None:
         """Hook called per completed line in a text body.
 
         If it returns a mapping, the parser emits it as a ui.item event.
+        """
+        return None
+
+    @classmethod
+    async def before_save(cls, block: Any, run: Any = None) -> Mapping[str, Any] | None:
+        """Hook called before the block text is persisted to disk.
+
+        Any returned mapping is merged into the ui.block.end event payload.
+        """
+        return None
+
+    @classmethod
+    async def after_save(cls, target_path: Path, block: Any, run: Any = None) -> Mapping[str, Any] | None:
+        """Hook called immediately after the block has been written/appended/patched to disk.
+
+        Any returned mapping is merged into the ui.block.end event payload.
         """
         return None
 
@@ -374,6 +399,15 @@ class CardCatalog:
         schema = self._blocks.get(name)
         if schema is not None and hasattr(schema, "should_emit_text"):
             return schema.should_emit_text()
+        return True
+
+    def should_persist(self, name: str) -> bool:
+        """Whether a block schema should be persisted to disk."""
+        if name == "diff":
+            return False
+        schema = self._blocks.get(name)
+        if schema is not None and hasattr(schema, "should_persist"):
+            return bool(schema.should_persist())
         return True
 
     def parse_line(self, name: str, line: str, block: Any) -> Mapping[str, Any] | None:
