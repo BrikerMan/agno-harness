@@ -22,6 +22,32 @@ except ImportError:
     _LARK_AVAILABLE = False
 
 
+def _post_image_keys(content: dict[str, Any]) -> list[str]:
+    """Collect ``image_key`` of every ``img`` element in a (possibly localized) post."""
+    bodies: list[Any] = []
+    if isinstance(content.get("content"), list):
+        bodies.append(content)
+    else:
+        bodies.extend(v for v in content.values() if isinstance(v, dict))
+    keys: list[str] = []
+    for body in bodies:
+        for line in body.get("content") or []:
+            for el in line if isinstance(line, list) else []:
+                if isinstance(el, dict) and el.get("tag") == "img" and el.get("image_key"):
+                    keys.append(str(el["image_key"]))
+    return keys
+
+
+def _card_response() -> Any:
+    if not _LARK_AVAILABLE:
+        return None
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
+
+    return P2CardActionTriggerResponse({})
+
+
 class LarkChannel(BaseChannel):
     """Lark (Feishu) channel adapter supporting WebSocket long connection and Card v2."""
 
@@ -65,6 +91,7 @@ class LarkChannel(BaseChannel):
                         self.encrypt_key or "", self.verification_token or ""
                     )
                     .register_p2_im_message_receive_v1(self._handle_im_message)
+                    .register_p2_card_action_trigger(self._handle_card_action)
                     .build()
                 )
 
@@ -104,6 +131,15 @@ class LarkChannel(BaseChannel):
 
             if msg_type == "post":
                 text = lark_post_to_markdown(content_dict)
+                for image_key in _post_image_keys(content_dict):
+                    inbound_attachments.append(
+                        InboundAttachment(
+                            id=image_key,
+                            name=f"{image_key}.jpg",
+                            content_type="image/jpeg",
+                            raw={"image_key": image_key},
+                        )
+                    )
             elif msg_type == "image":
                 image_key = content_dict.get("image_key", "")
                 text = f"![图片](image_key:{image_key})"
@@ -170,6 +206,72 @@ class LarkChannel(BaseChannel):
         except Exception as exc:
             log.error(f"Error parsing Lark inbound event: {exc}", exc_info=True)
 
+    def _handle_card_action(self, data: Any) -> Any:
+        """Callback from Lark for interactive card button clicks (``card.action.trigger``).
+
+        The button ``value`` must carry ``action_id``; the rest is passed through as
+        ``action_value``. Lark expects an answer within 3s, so the event is queued and
+        an empty response returned; handlers update the card via ``send`` with
+        ``extra={"update_in_place": True}``.
+        """
+        try:
+            event = data.event
+            action = getattr(event, "action", None)
+            value = dict(getattr(action, "value", None) or {})
+            action_id = value.get("action_id")
+            if not action_id:
+                log.warning("Lark card action without action_id; ignoring")
+                return _card_response()
+            context = getattr(event, "context", None)
+            operator = getattr(event, "operator", None)
+            message_id = getattr(context, "open_message_id", None)
+            key = ConversationKey(
+                platform="lark",
+                chat_id=getattr(context, "open_chat_id", None) or "",
+                reply_to_id=message_id,
+                sender_id=getattr(operator, "open_id", None),
+            )
+            channel_event = ChannelEvent(
+                event_id=f"card:{getattr(event, 'token', None) or message_id}:{action_id}",
+                key=key,
+                sender_name=getattr(operator, "open_id", None),
+                action_id=str(action_id),
+                action_value=value,
+                raw=data,
+            )
+            loop = self._loop
+            if loop is not None and loop.is_running():
+                asyncio.run_coroutine_threadsafe(self.push_event(channel_event), loop)
+            else:
+                asyncio.run(self.push_event(channel_event))
+        except Exception as exc:
+            log.error(f"Error parsing Lark card action: {exc}", exc_info=True)
+        return _card_response()
+
+    async def fetch_attachment(
+        self, event: ChannelEvent, attachment: InboundAttachment
+    ) -> bytes | None:
+        """Download an image / file resource attached to the inbound message."""
+        if not attachment.id or not event.event_id or not _LARK_AVAILABLE:
+            return None
+        client = self._ensure_client()
+        resource_type = "image" if attachment.is_image else "file"
+        req = (
+            lark.api.im.v1.GetMessageResourceRequest.builder()
+            .message_id(event.event_id)
+            .file_key(attachment.id)
+            .type(resource_type)
+            .build()
+        )
+        resp = await asyncio.to_thread(client.im.v1.message_resource.get, req)
+        if resp is None or not resp.success() or resp.file is None:
+            log.warning(
+                f"Lark resource download failed for {attachment.id}: "
+                f"{getattr(resp, 'code', None)} {getattr(resp, 'msg', None)}"
+            )
+            return None
+        return resp.file.read()
+
     async def ack(self, event: ChannelEvent, emoji: str = "THINKING") -> Any:
         """Acknowledge message with emoji reaction."""
         if not _LARK_AVAILABLE or not self._client:
@@ -202,6 +304,22 @@ class LarkChannel(BaseChannel):
         if hasattr(client, "im") and hasattr(client.im, "v1"):
             # Use real SDK client if present
             try:
+                # Card actions replace the clicked card instead of replying under it
+                if message.cards and reply_to_id and (message.extra or {}).get("update_in_place"):
+                    req = (
+                        lark.api.im.v1.PatchMessageRequest.builder()
+                        .message_id(reply_to_id)
+                        .request_body(
+                            lark.api.im.v1.PatchMessageRequestBody.builder()
+                            .content(content)
+                            .build()
+                        )
+                        .build()
+                    )
+                    resp = await asyncio.to_thread(client.im.v1.message.patch, req)
+                    if resp is not None and not resp.success():
+                        log.error(f"Failed to update Lark card: {resp.code} {resp.msg}")
+                    return reply_to_id
                 # Reply to thread if reply_to_id is available
                 if reply_to_id:
                     req = (

@@ -3,6 +3,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+from ..core.attachment import InboundAttachment
 from ..core.channel import Channel, ChannelEvent
 from ..sessions.models import ConversationKey
 
@@ -69,4 +70,10 @@ class BaseChannel(Channel, abc.ABC):
         status: str = "started",
     ) -> None:
         """Default no-op live tool-call update (CLI renders a Rich panel)."""
+        return None
+
+    async def fetch_attachment(
+        self, event: ChannelEvent, attachment: InboundAttachment
+    ) -> bytes | None:
+        """Download attachment bytes from the platform. Default: not supported."""
         return None

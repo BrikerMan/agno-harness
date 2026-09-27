@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import contextlib
 import json
 import logging
@@ -9,11 +10,16 @@ from typing import Any, cast
 from uuid import uuid4
 
 from ag_ui.core import EventType, RunAgentInput, UserMessage
-from ag_ui.core.types import ToolMessage
+from ag_ui.core.types import (
+    ImageInputContent,
+    InputContentDataSource,
+    TextInputContent,
+    ToolMessage,
+)
 
 from .background_task.context import bind_origin, reset_origin
 from .channels.base import BaseChannel
-from .core.attachment import AttachmentProcessor
+from .core.attachment import AttachmentProcessor, InboundAttachment
 from .core.channel import ChannelEvent, OutboundMessage
 from .core.chimein import ChimeInPolicy
 from .core.streamui.schema import CardCatalog
@@ -97,6 +103,25 @@ def _agui_tool_end_id(event: Any) -> str | None:
     if event_type is not EventType.TOOL_CALL_END and "TOOL_CALL_END" not in _agui_type_name(event):
         return None
     return getattr(event, "tool_call_id", "") or ""
+
+
+def _user_content(text: str, attachments: list[InboundAttachment]) -> str | list[Any]:
+    """Plain text, or AG-UI multimodal parts when downloaded images are attached."""
+    images = [a for a in attachments if a.is_image and a.data]
+    if not images:
+        return text
+    parts: list[Any] = [TextInputContent(text=text)] if text else []
+    for attachment in images:
+        assert attachment.data is not None
+        parts.append(
+            ImageInputContent(
+                source=InputContentDataSource(
+                    value=base64.b64encode(attachment.data).decode("ascii"),
+                    mime_type=attachment.content_type or "image/jpeg",
+                )
+            )
+        )
+    return parts
 
 
 def _parse_tool_args(raw: str) -> Any:
@@ -543,9 +568,16 @@ class RelayApp:
                 },
             )
 
-            # 7. Pluggable attachment processing (OCR, DocMind, file extraction)
+            # 7. Download attachment bytes, then pluggable processing (OCR, DocMind, S3)
             effective_prompt = text
             context_items: list[Any] = []
+            for attachment in event.attachments:
+                if attachment.data is not None:
+                    continue
+                try:
+                    attachment.data = await channel.fetch_attachment(event, attachment)
+                except Exception as exc:
+                    log.warning(f"Error downloading attachment {attachment.id}: {exc}")
             if self.attachment_processor is not None and event.attachments:
                 try:
                     att_ctx = await self.attachment_processor.process(event.attachments, event)
@@ -568,7 +600,13 @@ class RelayApp:
                 thread_id=session_id,
                 run_id=str(uuid4()),
                 state={},
-                messages=[UserMessage(id=str(uuid4()), role="user", content=effective_prompt)],
+                messages=[
+                    UserMessage(
+                        id=str(uuid4()),
+                        role="user",
+                        content=_user_content(effective_prompt, event.attachments),
+                    )
+                ],
                 tools=[],
                 context=context_items,
                 forwarded_props=None,

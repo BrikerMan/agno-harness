@@ -19,6 +19,12 @@ class InboundAttachment(BaseModel):
     url: str | None = None
     size: int | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
+    data: bytes | None = Field(default=None, exclude=True, repr=False)
+    """Downloaded bytes, filled by ``Channel.fetch_attachment`` before the turn runs."""
+
+    @property
+    def is_image(self) -> bool:
+        return (self.content_type or "").startswith("image/")
 
 
 @runtime_checkable

@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ag_ui.core import RunAgentInput
+from ag_ui.core.types import TextInputContent
 from agno.os.interfaces.agui.input import extract_context, extract_media, extract_user_input
 from agno.run.base import RunContext
 
@@ -184,11 +185,26 @@ def _set_last_user_content(messages: Any, content: str) -> None:
             role = item.get("role")
         if str(role) != "user":
             continue
+        current = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+        new_content: str | list[Any] = (
+            _replace_text_parts(current, content) if isinstance(current, list) else content
+        )
         if isinstance(item, dict):
-            item["content"] = content
+            item["content"] = new_content
         else:
-            item.content = content
+            item.content = new_content
         return
+
+
+def _replace_text_parts(parts: list[Any], text: str) -> list[Any]:
+    """Swap the text of a multimodal message for ``text``, keeping media parts in place."""
+
+    def is_text(part: Any) -> bool:
+        kind = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+        return kind == "text"
+
+    media = [part for part in parts if not is_text(part)]
+    return [TextInputContent(text=text), *media]
 
 
 __all__ = ["AgentRunner"]

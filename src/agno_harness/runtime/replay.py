@@ -51,6 +51,17 @@ def input_to_text(input_obj: Any) -> str:
     return str(content) if content else ""
 
 
+def _part_text(part: Any) -> str:
+    """Text of one multimodal part; media parts (images, audio, ...) contribute nothing."""
+    if isinstance(part, str):
+        return part
+    kind = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+    if kind not in (None, "text"):
+        return ""
+    text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
+    return text if isinstance(text, str) else ""
+
+
 def last_user_text(messages: Any) -> str:
     """The latest user turn on an AG-UI ``RunAgentInput``.
 
@@ -70,10 +81,8 @@ def last_user_text(messages: Any) -> str:
         if isinstance(content, str) and content:
             return content
         if isinstance(content, list):
-            text = " ".join(
-                part.get("text", "") if isinstance(part, dict) else str(part) for part in content
-            )
-            if text.strip():
+            text = " ".join(_part_text(part) for part in content).strip()
+            if text:
                 return text
     return ""
 
