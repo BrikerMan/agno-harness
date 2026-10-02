@@ -78,7 +78,7 @@ from .helpers import (
     poll_lark_app_registration,
     save_env_file,
 )
-from .knowledge import MarkdownKnowledge
+from .knowledge import CjkKeywordScorer, KeywordKnowledge, MarkdownKnowledge
 from .logging import (
     RelayConsoleFormatter,
     RelayJsonFormatter,
@@ -235,6 +235,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "ActionRecordMixin",
+    "CjkKeywordScorer",
     "EVENT_BLOCK_END",
     "EVENT_BLOCK_START",
     "EVENT_DEBUG_SUMMARY",
@@ -299,6 +300,7 @@ __all__ = [
     "InboundAttachment",
     "ItemSchema",
     "KeywordChimeInPolicy",
+    "KeywordKnowledge",
     "LarkChannel",
     "LongRunManager",
     "MarkdownKnowledge",

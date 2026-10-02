@@ -192,7 +192,7 @@ class SubAgentToolkit(Toolkit):
                     try:
                         stream = sub_agent.arun(stream=True, **run_kwargs)
                         if hasattr(stream, "__await__") and not hasattr(stream, "__aiter__"):
-                            stream = await stream
+                            stream = await stream  # type: ignore[misc]
                         stream_iter = stream.__aiter__()
                         while True:
                             timeout_to_use = (
