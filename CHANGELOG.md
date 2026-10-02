@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.4
+
+### Added
+
+- **`KeywordKnowledge` + `CjkKeywordScorer`** (`agno_harness.knowledge`): Chinese keyword retrieval with no embeddings. Text is cut into character bigrams (Latin words stay whole) and ranked with BM25 over weighted fields. Each hit carries `score` and `matched_terms` (adjacent bigrams joined back into words). `KeywordKnowledge.search` plugs in as an Agno `knowledge_retriever`; with `enable_agentic_knowledge_filters` it validates the model's filters itself — unknown keys or values nobody has are dropped with a warning instead of returning nothing. Override `normalize_filter_value` to accept the model's wording (一般 → general). Documents come from a `load` callable and are cached until `invalidate()`.
+- **Lark Card Action Callbacks & In-Place Updates**:
+  - `LarkChannel` registers `card.action.trigger` event listener over WebSocket and translates clicks into `ChannelEvent(action_id)`.
+  - Added support for in-place card updates via `extra={"update_in_place": True}` in `LarkChannel.send`.
+- **Multimodal Inbound Handling & Attachment Downloads**:
+  - `LarkChannel` extracts image resource keys from rich text post messages and downloads them via `fetch_attachment`.
+  - `RelayApp` automatically downloads attachments before turn execution and passes images as AG-UI multimodal image content parts.
+  - Query envelope preserves multimodal image parts instead of stringifying them.
+
+### Changed
+
+- `MarkdownKnowledge` ranks with the same bigram BM25, so Chinese notes match without spaces between words.
+- Bump package version to `0.2.4`.
+
 ## 0.2.3
 
 ### Added
