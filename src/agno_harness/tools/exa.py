@@ -128,7 +128,7 @@ class ExaTools(Toolkit):
             {
                 "protocolVersion": _PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "agno-harness", "version": "0.2.5"},
+                "clientInfo": {"name": "agno-harness", "version": "0.2.6"},
             },
         )
         if "error" in payload:

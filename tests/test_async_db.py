@@ -96,3 +96,34 @@ async def test_thread_service_agent_scope():
     db.delete_session.assert_not_awaited()
     assert (await service.delete_thread("t-mine", user_id="u"))["ok"] is True
     db.delete_session.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_thread_service_per_call_agent_filter():
+    db = MagicMock()
+    db.get_sessions = AsyncMock(return_value=[])
+    db.get_session = AsyncMock(return_value=None)
+
+    # Unscoped service: a per-call agent_id filters down to one agent.
+    service = ThreadService(db=db)
+    await service.stores.threads.start_turn("t-a", user_id="u", agent_id="admin-agent")
+    await service.stores.threads.start_turn("t-b", user_id="u", agent_id="ipv-agent")
+    assert len(await service.list_threads(user_id="u")) == 2
+    only_ipv = await service.list_threads(user_id="u", agent_id="ipv-agent")
+    assert [t["threadId"] for t in only_ipv] == ["t-b"]
+    assert only_ipv[0]["agentId"] == "ipv-agent"
+    assert await service.get_thread("t-a", user_id="u", agent_id="ipv-agent") is None
+    assert (await service.get_thread("t-a", user_id="u", agent_id="admin-agent"))[
+        "threadId"
+    ] == "t-a"
+    assert (await service.delete_thread("t-a", user_id="u", agent_id="ipv-agent"))["ok"] is False
+    assert (await service.delete_thread("t-a", user_id="u", agent_id="admin-agent"))["ok"] is True
+
+    # Scoped service: a per-call value may repeat the scope but never switch it.
+    scoped = ThreadService(db=db, agent_id="admin-agent")
+    await scoped.stores.threads.start_turn("t-a", user_id="u", agent_id="admin-agent")
+    await scoped.stores.threads.start_turn("t-b", user_id="u", agent_id="ipv-agent")
+    assert len(await scoped.list_threads(user_id="u", agent_id="admin-agent")) == 1
+    assert await scoped.list_threads(user_id="u", agent_id="ipv-agent") == []
+    assert await scoped.get_thread("t-b", user_id="u", agent_id="ipv-agent") is None
+    assert (await scoped.delete_thread("t-b", user_id="u", agent_id="ipv-agent"))["ok"] is False

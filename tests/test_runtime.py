@@ -1146,3 +1146,12 @@ class TestAgentScope:
         agent.id = "from-agent"
         assert AgentRuntime(agent=agent).agent_id == "from-agent"
         assert runtime_for([run_completed()]).agent_id is None
+
+    async def test_runtime_list_threads_takes_a_per_call_agent_filter(self):
+        a = runtime_for([run_completed()])
+        await stream(a)
+        assert a.agent_id is None  # unscoped runtime: stamps nothing
+        b = runtime_for([run_completed()], agent_id="ipv-agent", stores=a.stores)
+        await stream(b, make_input(thread_id="thread-2", run_id="run-2"))
+        assert len(await a.list_threads()) == 2
+        assert [t["threadId"] for t in await a.list_threads(agent_id="ipv-agent")] == ["thread-2"]

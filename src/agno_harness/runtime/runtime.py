@@ -586,20 +586,33 @@ class AgentRuntime:
         return await self.threads.replay_messages(thread_id, user_id=user_id)
 
     async def get_thread(
-        self, thread_id: str, *, user_id: str | None = None
+        self, thread_id: str, *, user_id: str | None = None, agent_id: str | None = None
     ) -> dict[str, Any] | None:
         """Get a single thread's metadata and status."""
-        return await self.threads.get_thread(thread_id, user_id=user_id)
+        return await self.threads.get_thread(thread_id, user_id=user_id, agent_id=agent_id)
 
-    async def list_threads(self, *, user_id: str | None = None) -> list[dict[str, Any]]:
-        """This user's threads, newest first, with a title and message count."""
-        return await self.threads.list_threads(user_id=user_id)
+    async def list_threads(
+        self, *, user_id: str | None = None, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """This user's threads, newest first, with a title and message count.
+
+        ``agent_id`` narrows to one agent's threads; this runtime's own scope
+        (see ``agent_id`` on the constructor) always applies.
+        """
+        return await self.threads.list_threads(user_id=user_id, agent_id=agent_id)
 
     async def delete_thread(
-        self, thread_id: str, *, user_id: str | None = None, hard: bool = False
+        self,
+        thread_id: str,
+        *,
+        user_id: str | None = None,
+        hard: bool = False,
+        agent_id: str | None = None,
     ) -> dict[str, Any]:
         """Delete a thread and the records the toolbox added alongside it."""
-        return await self.threads.delete_thread(thread_id, user_id=user_id, hard=hard)
+        return await self.threads.delete_thread(
+            thread_id, user_id=user_id, hard=hard, agent_id=agent_id
+        )
 
     async def generate_thread_title(
         self,

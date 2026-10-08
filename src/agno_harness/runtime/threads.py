@@ -27,6 +27,11 @@ every read, replay and delete is confined to that agent's threads, the same way
 thread owned by another agent is indistinguishable from one that never existed.
 ``agent_id=None`` leaves the service unscoped (the old behaviour).
 
+``list_threads`` / ``get_thread`` / ``delete_thread`` also take a per-call
+``agent_id`` to filter an unscoped service down to one agent. A per-call value
+can only narrow: on a scoped service it must equal the scope, and anything else
+matches nothing rather than widening or switching it.
+
 ``user_id=None`` means single-user mode, where everything belongs to everybody.
 That is a legitimate configuration for a local tool, and a serious mistake for a
 deployed one, so the transport warns when no resolver is configured rather than
@@ -124,16 +129,21 @@ class ThreadService:
             return None
         return messages
 
-    async def list_threads(self, *, user_id: str | None = None) -> list[dict[str, Any]]:
-        """This user's threads, newest first.
+    async def list_threads(
+        self, *, user_id: str | None = None, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """This user's threads, newest first; optionally only one agent's.
 
         List is a projection from the dedicated ThreadStore backed by the database.
         Falls back to Agno session rows if ThreadStore has no entries.
         """
+        scope, allowed = self._narrow(agent_id)
+        if not allowed:
+            return []
         if getattr(self.stores, "threads", None) is not None:
             try:
                 store_threads = await self.stores.threads.list_threads(
-                    user_id=user_id, agent_id=self.agent_id
+                    user_id=user_id, agent_id=scope
                 )
                 if store_threads:
                     return store_threads
@@ -141,7 +151,7 @@ class ThreadService:
                 pass
 
         threads: list[dict[str, Any]] = []
-        for session in await self.get_sessions(user_id=user_id):
+        for session in await self.get_sessions(user_id=user_id, agent_id=scope):
             row = thread_summary_from_session(session)
             if row is not None:
                 threads.append(row)
@@ -149,38 +159,51 @@ class ThreadService:
         return threads
 
     async def get_thread(
-        self, thread_id: str, *, user_id: str | None = None
+        self, thread_id: str, *, user_id: str | None = None, agent_id: str | None = None
     ) -> dict[str, Any] | None:
         """Get a single thread's metadata and status directly from ThreadStore."""
+        scope, allowed = self._narrow(agent_id)
+        if not allowed:
+            return None
         if getattr(self.stores, "threads", None) is not None:
             try:
                 thread = await self.stores.threads.get_thread(
-                    thread_id, user_id=user_id, agent_id=self.agent_id
+                    thread_id, user_id=user_id, agent_id=scope
                 )
                 if thread is not None:
                     return thread
             except Exception:
                 pass
 
-        session = await self.get_session(thread_id, user_id=user_id)
+        session = await self.get_session(thread_id, user_id=user_id, agent_id=scope)
         if session is not None:
             return thread_summary_from_session(session)
         return None
 
     async def delete_thread(
-        self, thread_id: str, *, user_id: str | None = None, hard: bool = False
+        self,
+        thread_id: str,
+        *,
+        user_id: str | None = None,
+        hard: bool = False,
+        agent_id: str | None = None,
     ) -> dict[str, Any]:
         """Delete a thread and the records the toolbox added alongside it."""
+        scope, allowed = self._narrow(agent_id)
+        if not allowed:
+            return {"ok": False, "error": "thread not found"}
         deleted_in_store = False
         if getattr(self.stores, "threads", None) is not None:
             deleted_in_store = await self.stores.threads.delete_thread(
-                thread_id, user_id=user_id, hard=hard, agent_id=self.agent_id
+                thread_id, user_id=user_id, hard=hard, agent_id=scope
             )
 
         deleted_in_db = False
         # Agno's delete_session has no agent filter, so a scoped service must
         # confirm ownership first or it would delete another agent's session.
-        owns_session = self.agent_id is None or await self.get_session(thread_id, user_id=user_id)
+        owns_session = scope is None or await self.get_session(
+            thread_id, user_id=user_id, agent_id=scope
+        )
         if self.db is not None and owns_session:
             try:
                 deleted = self.db.delete_session(session_id=thread_id, user_id=user_id)
@@ -305,18 +328,24 @@ class ThreadService:
 
     # ── session database access ───────────────────────────────────────────
 
-    async def get_session(self, thread_id: str, *, user_id: str | None = None) -> Any:
+    async def get_session(
+        self, thread_id: str, *, user_id: str | None = None, agent_id: str | None = None
+    ) -> Any:
         if self.db is None:
             return None
         res = self.db.get_session(session_id=thread_id, user_id=user_id)
         if inspect.isawaitable(res):
             res = await res
-        if res is not None and not self._in_scope(res):
+        scope, allowed = self._narrow(agent_id)
+        if res is not None and not (allowed and self._in_scope(res, scope)):
             return None
         return res
 
-    async def get_sessions(self, *, user_id: str | None = None) -> list[Any]:
-        if self.db is None:
+    async def get_sessions(
+        self, *, user_id: str | None = None, agent_id: str | None = None
+    ) -> list[Any]:
+        scope, allowed = self._narrow(agent_id)
+        if self.db is None or not allowed:
             return []
         # Prefer Agno's raw rows: list endpoints must not hydrate full RunOutput
         # graphs. Fall back if an older/fake db rejects the kwargs.
@@ -326,8 +355,8 @@ class ThreadService:
             "sort_by": "updated_at",
             "sort_order": "desc",
         }
-        if self.agent_id is not None:
-            kwargs["component_id"] = self.agent_id
+        if scope is not None:
+            kwargs["component_id"] = scope
         try:
             res = self.db.get_sessions(**kwargs)
         except TypeError:
@@ -338,14 +367,25 @@ class ThreadService:
             # Agno returns (rows, total) when deserialize=False.
             res = res[0]
         # Re-check after the query: an older db may ignore ``component_id``.
-        return [s for s in (res or []) if self._in_scope(s)]
+        return [s for s in (res or []) if self._in_scope(s, scope)]
 
-    def _in_scope(self, session: Any) -> bool:
-        """Whether an Agno session (object or raw row) belongs to this service's agent."""
-        if self.agent_id is None:
+    def _narrow(self, agent_id: str | None) -> tuple[str | None, bool]:
+        """Combine the service scope with a per-call ``agent_id``.
+
+        Returns ``(effective_agent_id, allowed)``. A per-call value may narrow an
+        unscoped service; on a scoped one it must match, else nothing is allowed.
+        """
+        if self.agent_id is None or agent_id is None or agent_id == self.agent_id:
+            return (agent_id if agent_id is not None else self.agent_id), True
+        return None, False
+
+    @staticmethod
+    def _in_scope(session: Any, agent_id: str | None) -> bool:
+        """Whether an Agno session (object or raw row) belongs to ``agent_id``."""
+        if agent_id is None:
             return True
         get = session.get if isinstance(session, dict) else lambda k: getattr(session, k, None)
-        return self.agent_id in (get("agent_id"), get("team_id"), get("workflow_id"))
+        return agent_id in (get("agent_id"), get("team_id"), get("workflow_id"))
 
 
 def _archived_frames(run_id: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:

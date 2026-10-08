@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.6
+
+### Added
+
+- **Per-call `agent_id` filter on the Python API**: `ThreadService` and `AgentRuntime` `list_threads` / `get_thread` / `delete_thread` (and `ThreadService.get_session` / `get_sessions`) take an optional `agent_id`. On an unscoped service it filters down to one agent's threads; on a scoped one it can only repeat the scope, anything else matches nothing. HTTP routes are unchanged.
+- Subclasses that override `ThreadService.get_session` / `get_sessions` must accept the new `agent_id` keyword.
+
+### Changed
+
+- Bump package version to `0.2.6`.
+
 ## 0.2.5
 
 ### Added
