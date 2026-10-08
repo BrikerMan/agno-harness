@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.5
+
+### Added
+
+- **Agent-scoped threads**: several runtimes can now share one set of harness tables without seeing each other's history.
+  - `agno_harness_threads` gains a nullable, indexed `agent_id` column. **Requires a schema migration** (`ALTER TABLE ... ADD COLUMN agent_id VARCHAR(128)` + index); rows written earlier keep `NULL`.
+  - `AgentRuntime(agent_id=...)` stamps every thread it starts and scopes its thread list, get, replay, frames and delete to that agent. Defaults to `agent.id` when the agent has one; with neither, the runtime stays unscoped as before.
+  - `ThreadService(agent_id=...)` applies the same scope to the thread store and to Agno sessions (`component_id` filter plus a post-check). Deleting another agent's thread never reaches Agno's unscoped `delete_session`.
+  - `BaseThreadStore.start_turn / get_thread / list_threads / delete_thread` accept an optional `agent_id`; thread summaries expose `agentId`.
+  - A legacy thread with `agent_id = NULL` is adopted by the first agent that continues it and never reassigned. Scoped listings skip unstamped rows, so backfill them from the Agno session table: `UPDATE <prefix>_threads t SET agent_id = s.agent_id FROM <sessions> s WHERE s.session_id = t.thread_id AND t.agent_id IS NULL`.
+
+### Changed
+
+- Bump package version to `0.2.5`.
+
 ## 0.2.4
 
 ### Added
