@@ -119,6 +119,11 @@ class AgentRuntime:
         Write a per-run JSONL of the chunk-to-event mapping here. Defaults to
         ``$AGNO_HARNESS_TRACE_DIR``, and to off when that is unset. See
         :mod:`agno_harness.runtime.tracing`.
+    agent_id:
+        Owner stamped on every thread this runtime starts, and the scope for
+        listing, replaying and deleting them. Use it when several runtimes share
+        one set of tables. Defaults to ``agent.id`` when the agent was given one;
+        ``None`` leaves the runtime unscoped.
     user_query_builder:
         Override the default :class:`UserQueryBuilder` (plugins / timezone).
         Every run wraps the latest user turn as ``<user-query>`` plus
@@ -145,8 +150,12 @@ class AgentRuntime:
         trace_dir: str | os.PathLike[str] | None = None,
         user_query_builder: UserQueryBuilder | None = None,
         read_timeout: float | None = 300.0,
+        agent_id: str | None = None,
     ) -> None:
         self.agent = agent
+        # Stable owner of this runtime's threads. Explicit beats ``agent.id``; an
+        # agent that was never given an id yields ``None`` and runs unscoped.
+        self.agent_id = agent_id if agent_id is not None else getattr(agent, "id", None)
         self.db = db if db is not None else getattr(agent, "db", None)
         self.harness_db = harness_db
 
@@ -193,6 +202,7 @@ class AgentRuntime:
             stores=self.stores,
             catalog=catalog,
             hidden_tool_names=lambda: self.hidden_tool_names,
+            agent_id=self.agent_id,
         )
 
         # Registration order is pipeline order, and each position here is a
@@ -358,6 +368,7 @@ class AgentRuntime:
                     user_id=scope.user_id,
                     run_id=scope.run_id,
                     title=prompt[:40] if prompt else None,
+                    agent_id=self.agent_id,
                 )
 
         try:

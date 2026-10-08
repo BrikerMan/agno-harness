@@ -54,3 +54,45 @@ async def test_thread_service_with_async_db():
 def test_redis_run_event_log_protocol():
     log = RedisRunEventLog.from_url("redis://127.0.0.1:6379/0", namespace="test", protocol=2)
     assert log.client.connection_pool.connection_kwargs.get("protocol") == 2
+
+
+@pytest.mark.asyncio
+async def test_thread_service_agent_scope():
+    def session(sid: str, agent_id: str) -> MagicMock:
+        s = MagicMock()
+        s.session_id = sid
+        s.agent_id = agent_id
+        s.team_id = None
+        s.workflow_id = None
+        s.runs = []
+        s.session_data = {}
+        s.created_at = s.updated_at = 1
+        return s
+
+    mine, theirs = session("t-mine", "admin-agent"), session("t-theirs", "ipv-agent")
+    db = MagicMock()
+    db.get_sessions = AsyncMock(return_value=[mine, theirs])  # a db that ignores component_id
+    db.get_session = AsyncMock(
+        side_effect=lambda session_id, user_id: {"t-mine": mine, "t-theirs": theirs}[session_id]
+    )
+    db.delete_session = AsyncMock(return_value=True)
+
+    service = ThreadService(db=db, agent_id="admin-agent")
+    await service.stores.threads.start_turn("t-mine", user_id="u", agent_id="admin-agent")
+    await service.stores.threads.start_turn("t-theirs", user_id="u", agent_id="ipv-agent")
+
+    assert db.get_sessions.call_count == 0
+    assert [s.session_id for s in await service.get_sessions(user_id="u")] == ["t-mine"]
+    assert db.get_sessions.await_args.kwargs["component_id"] == "admin-agent"
+
+    assert [t["threadId"] for t in await service.list_threads(user_id="u")] == ["t-mine"]
+    assert await service.get_thread("t-theirs", user_id="u") is None
+    assert await service.get_session("t-theirs", user_id="u") is None
+    assert await service.replay_messages("t-theirs", user_id="u") is None
+
+    # Deleting another agent's thread must not reach Agno's unscoped delete_session.
+    result = await service.delete_thread("t-theirs", user_id="u")
+    assert result["ok"] is False
+    db.delete_session.assert_not_awaited()
+    assert (await service.delete_thread("t-mine", user_id="u"))["ok"] is True
+    db.delete_session.assert_awaited_once()

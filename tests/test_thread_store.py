@@ -164,3 +164,57 @@ async def test_sqlalchemy_thread_store_lifecycle(tmp_path):
     assert await store.get_thread("sql-1", include_deleted=True) is None
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_in_memory_thread_store_agent_scope():
+    store = InMemoryThreadStore()
+    await store.start_turn("t-admin", user_id="u", agent_id="admin-agent")
+    await store.start_turn("t-ipv", user_id="u", agent_id="ipv-agent")
+    await store.start_turn("t-legacy", user_id="u")
+
+    assert (await store.get_thread("t-admin"))["agentId"] == "admin-agent"
+    assert [t["threadId"] for t in await store.list_threads(user_id="u", agent_id="ipv-agent")] == [
+        "t-ipv"
+    ]
+    # Unscoped keeps the old behaviour: everything the user owns.
+    assert len(await store.list_threads(user_id="u")) == 3
+    # Another agent's thread looks like it never existed.
+    assert await store.get_thread("t-admin", agent_id="ipv-agent") is None
+    assert await store.delete_thread("t-admin", agent_id="ipv-agent") is False
+    assert await store.delete_thread("t-admin", agent_id="admin-agent") is True
+
+    # An unstamped legacy thread is adopted by the first agent that continues it,
+    # and never reassigned afterwards.
+    await store.start_turn("t-legacy", user_id="u", agent_id="ipv-agent")
+    await store.start_turn("t-legacy", user_id="u", agent_id="admin-agent")
+    assert (await store.get_thread("t-legacy"))["agentId"] == "ipv-agent"
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_thread_store_agent_scope(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'scope.db'}")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    model = get_or_create_thread_model("scope_threads")
+    async with engine.begin() as conn:
+        await conn.run_sync(model.metadata.create_all)
+    store = SQLAlchemyThreadStore(session_factory, model=model)
+
+    await store.start_turn("t-admin", user_id="u", agent_id="admin-agent")
+    await store.start_turn("t-ipv", user_id="u", agent_id="ipv-agent")
+    await store.start_turn("t-legacy", user_id="u")
+
+    assert (await store.get_thread("t-admin"))["agentId"] == "admin-agent"
+    scoped = await store.list_threads(user_id="u", agent_id="admin-agent")
+    assert [t["threadId"] for t in scoped] == ["t-admin"]
+    assert len(await store.list_threads(user_id="u")) == 3
+    assert await store.get_thread("t-admin", agent_id="ipv-agent") is None
+    assert await store.delete_thread("t-admin", agent_id="ipv-agent") is False
+    assert await store.get_thread("t-admin") is not None
+
+    await store.start_turn("t-legacy", user_id="u", agent_id="ipv-agent")
+    await store.start_turn("t-legacy", user_id="u", agent_id="admin-agent")
+    assert (await store.get_thread("t-legacy"))["agentId"] == "ipv-agent"
+    assert await store.delete_thread("t-admin", agent_id="admin-agent", hard=True) is True
+
+    await engine.dispose()

@@ -205,7 +205,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 
 def __getattr__(name: str) -> Any:

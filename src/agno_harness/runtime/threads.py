@@ -19,6 +19,14 @@ Agno's ``BaseDb`` has taken ``user_id`` on ``get_session``, ``get_sessions`` and
 ``delete_session`` all along; the toolbox simply was not passing it. Anyone
 holding a thread id could read or delete that thread.
 
+AGENT SCOPE
+-----------
+Several runtimes can share one set of tables. Give each its own ``agent_id`` and
+every read, replay and delete is confined to that agent's threads, the same way
+``user_id`` confines it to one user's: the filter goes into the query, and a
+thread owned by another agent is indistinguishable from one that never existed.
+``agent_id=None`` leaves the service unscoped (the old behaviour).
+
 ``user_id=None`` means single-user mode, where everything belongs to everybody.
 That is a legitimate configuration for a local tool, and a serious mistake for a
 deployed one, so the transport warns when no resolver is configured rather than
@@ -63,6 +71,10 @@ class ThreadService:
     hidden_tool_names:
         Called per request rather than captured, because filters can be
         registered after this service is constructed.
+    agent_id:
+        Confine this service to one agent's threads and sessions. Threads are
+        matched on the owner stamped by ``start_turn``; Agno sessions on their
+        own ``agent_id``. ``None`` disables the scope.
     """
 
     def __init__(
@@ -72,7 +84,9 @@ class ThreadService:
         stores: Stores | None = None,
         catalog: CardCatalog | None = None,
         hidden_tool_names: Callable[[], set[str]] | None = None,
+        agent_id: str | None = None,
     ) -> None:
+        self.agent_id = agent_id
         self.db = db
         self.stores = stores or Stores()
         self.catalog = catalog
@@ -118,7 +132,9 @@ class ThreadService:
         """
         if getattr(self.stores, "threads", None) is not None:
             try:
-                store_threads = await self.stores.threads.list_threads(user_id=user_id)
+                store_threads = await self.stores.threads.list_threads(
+                    user_id=user_id, agent_id=self.agent_id
+                )
                 if store_threads:
                     return store_threads
             except Exception:
@@ -138,7 +154,9 @@ class ThreadService:
         """Get a single thread's metadata and status directly from ThreadStore."""
         if getattr(self.stores, "threads", None) is not None:
             try:
-                thread = await self.stores.threads.get_thread(thread_id, user_id=user_id)
+                thread = await self.stores.threads.get_thread(
+                    thread_id, user_id=user_id, agent_id=self.agent_id
+                )
                 if thread is not None:
                     return thread
             except Exception:
@@ -156,11 +174,14 @@ class ThreadService:
         deleted_in_store = False
         if getattr(self.stores, "threads", None) is not None:
             deleted_in_store = await self.stores.threads.delete_thread(
-                thread_id, user_id=user_id, hard=hard
+                thread_id, user_id=user_id, hard=hard, agent_id=self.agent_id
             )
 
         deleted_in_db = False
-        if self.db is not None:
+        # Agno's delete_session has no agent filter, so a scoped service must
+        # confirm ownership first or it would delete another agent's session.
+        owns_session = self.agent_id is None or await self.get_session(thread_id, user_id=user_id)
+        if self.db is not None and owns_session:
             try:
                 deleted = self.db.delete_session(session_id=thread_id, user_id=user_id)
                 if inspect.isawaitable(deleted):
@@ -290,6 +311,8 @@ class ThreadService:
         res = self.db.get_session(session_id=thread_id, user_id=user_id)
         if inspect.isawaitable(res):
             res = await res
+        if res is not None and not self._in_scope(res):
+            return None
         return res
 
     async def get_sessions(self, *, user_id: str | None = None) -> list[Any]:
@@ -297,13 +320,16 @@ class ThreadService:
             return []
         # Prefer Agno's raw rows: list endpoints must not hydrate full RunOutput
         # graphs. Fall back if an older/fake db rejects the kwargs.
+        kwargs: dict[str, Any] = {
+            "user_id": user_id,
+            "deserialize": False,
+            "sort_by": "updated_at",
+            "sort_order": "desc",
+        }
+        if self.agent_id is not None:
+            kwargs["component_id"] = self.agent_id
         try:
-            res = self.db.get_sessions(
-                user_id=user_id,
-                deserialize=False,
-                sort_by="updated_at",
-                sort_order="desc",
-            )
+            res = self.db.get_sessions(**kwargs)
         except TypeError:
             res = self.db.get_sessions(user_id=user_id)
         if inspect.isawaitable(res):
@@ -311,7 +337,15 @@ class ThreadService:
         if isinstance(res, tuple):
             # Agno returns (rows, total) when deserialize=False.
             res = res[0]
-        return list(res or [])
+        # Re-check after the query: an older db may ignore ``component_id``.
+        return [s for s in (res or []) if self._in_scope(s)]
+
+    def _in_scope(self, session: Any) -> bool:
+        """Whether an Agno session (object or raw row) belongs to this service's agent."""
+        if self.agent_id is None:
+            return True
+        get = session.get if isinstance(session, dict) else lambda k: getattr(session, k, None)
+        return self.agent_id in (get("agent_id"), get("team_id"), get("workflow_id"))
 
 
 def _archived_frames(run_id: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:

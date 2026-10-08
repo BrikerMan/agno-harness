@@ -21,6 +21,16 @@ def _epoch(value: Any) -> float | None:
         return None
 
 
+def _matches_agent(owner: Any, agent_id: str | None) -> bool:
+    """Whether a thread's owner agent matches the requested one.
+
+    ``agent_id=None`` means unscoped. A scoped query only matches threads stamped
+    with that agent, so another agent's threads (or unstamped legacy ones) never
+    leak in.
+    """
+    return agent_id is None or owner == agent_id
+
+
 def thread_row_to_dict(row: Any) -> dict[str, Any]:
     """Serialize a thread model row or dict into a standard UI-friendly summary."""
     if isinstance(row, dict):
@@ -46,6 +56,7 @@ def thread_row_to_dict(row: Any) -> dict[str, Any]:
         "lastActiveAt": last_active_at or created_at,
         "lastFinishedAt": last_finished_at,
         "messageCount": 0,
+        "agentId": getattr(row, "agent_id", None),
         "metadata": load_json(getattr(row, "metadata_json", None)) or {},
     }
 
@@ -62,6 +73,7 @@ class BaseThreadStore(abc.ABC):
         run_id: str | None = None,
         title: str | None = None,
         metadata: dict[str, Any] | None = None,
+        agent_id: str | None = None,
     ) -> dict[str, Any]:
         """Record the start of a conversation turn in the thread."""
         ...
@@ -112,6 +124,7 @@ class BaseThreadStore(abc.ABC):
         *,
         user_id: str | None = None,
         include_deleted: bool = False,
+        agent_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Retrieve a thread summary by ID."""
         ...
@@ -124,6 +137,7 @@ class BaseThreadStore(abc.ABC):
         include_deleted: bool = False,
         limit: int | None = None,
         offset: int = 0,
+        agent_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List threads sorted newest first."""
         ...
@@ -135,6 +149,7 @@ class BaseThreadStore(abc.ABC):
         *,
         user_id: str | None = None,
         hard: bool = False,
+        agent_id: str | None = None,
     ) -> bool:
         """Delete thread (soft delete by default, hard purge if requested)."""
         ...
@@ -154,6 +169,7 @@ class InMemoryThreadStore(BaseThreadStore):
         run_id: str | None = None,
         title: str | None = None,
         metadata: dict[str, Any] | None = None,
+        agent_id: str | None = None,
     ) -> dict[str, Any]:
         now = datetime.now(UTC).timestamp()
         existing = self._threads.get(thread_id)
@@ -174,6 +190,7 @@ class InMemoryThreadStore(BaseThreadStore):
                 "lastActiveAt": now,
                 "lastFinishedAt": None,
                 "messageCount": 0,
+                "agentId": agent_id,
                 "metadata": metadata or {},
             }
             self._threads[thread_id] = record
@@ -193,6 +210,8 @@ class InMemoryThreadStore(BaseThreadStore):
             existing["userId"] = user_id
         if title and existing.get("title") == "New Chat":
             existing["title"] = title
+        if agent_id and not existing.get("agentId"):
+            existing["agentId"] = agent_id  # adopt an unstamped legacy thread; never reassign
         if metadata:
             existing.setdefault("metadata", {}).update(metadata)
         return existing
@@ -265,6 +284,7 @@ class InMemoryThreadStore(BaseThreadStore):
         *,
         user_id: str | None = None,
         include_deleted: bool = False,
+        agent_id: str | None = None,
     ) -> dict[str, Any] | None:
         record = self._threads.get(thread_id)
         if record is None:
@@ -277,6 +297,8 @@ class InMemoryThreadStore(BaseThreadStore):
             and record.get("userId") != user_id
         ):
             return None
+        if not _matches_agent(record.get("agentId"), agent_id):
+            return None
         return dict(record)
 
     async def list_threads(
@@ -286,12 +308,14 @@ class InMemoryThreadStore(BaseThreadStore):
         include_deleted: bool = False,
         limit: int | None = None,
         offset: int = 0,
+        agent_id: str | None = None,
     ) -> list[dict[str, Any]]:
         results = [
             dict(r)
             for r in self._threads.values()
             if (include_deleted or not r.get("isDeleted"))
             and (user_id is None or r.get("userId") is None or r.get("userId") == user_id)
+            and _matches_agent(r.get("agentId"), agent_id)
         ]
         results.sort(key=lambda t: t.get("lastActiveAt") or 0.0, reverse=True)
         if offset:
@@ -306,6 +330,7 @@ class InMemoryThreadStore(BaseThreadStore):
         *,
         user_id: str | None = None,
         hard: bool = False,
+        agent_id: str | None = None,
     ) -> bool:
         record = self._threads.get(thread_id)
         if record is None:
@@ -315,6 +340,8 @@ class InMemoryThreadStore(BaseThreadStore):
             and record.get("userId") is not None
             and record.get("userId") != user_id
         ):
+            return False
+        if not _matches_agent(record.get("agentId"), agent_id):
             return False
 
         if hard:
@@ -338,6 +365,10 @@ class SQLAlchemyThreadStore(BaseThreadStore):
         self.session_factory = session_factory
         self.model = model or get_or_create_thread_model(table_name)
 
+    def _scope_agent(self, stmt: Any, agent_id: str | None) -> Any:
+        """Restrict a query to threads owned by ``agent_id``."""
+        return stmt if agent_id is None else stmt.where(self.model.agent_id == agent_id)
+
     async def start_turn(
         self,
         thread_id: str,
@@ -346,6 +377,7 @@ class SQLAlchemyThreadStore(BaseThreadStore):
         run_id: str | None = None,
         title: str | None = None,
         metadata: dict[str, Any] | None = None,
+        agent_id: str | None = None,
     ) -> dict[str, Any]:
         async with self.session_factory() as session, session.begin():
             stmt = select(self.model).where(self.model.thread_id == thread_id)
@@ -357,6 +389,7 @@ class SQLAlchemyThreadStore(BaseThreadStore):
                 row = self.model(
                     thread_id=thread_id,
                     user_id=user_id,
+                    agent_id=agent_id,
                     title=title or "New Chat",
                     status="running",
                     is_paused=False,
@@ -386,6 +419,8 @@ class SQLAlchemyThreadStore(BaseThreadStore):
                 row.last_run_id = run_id
             if user_id and not row.user_id:
                 row.user_id = user_id
+            if agent_id and not row.agent_id:
+                row.agent_id = agent_id  # adopt an unstamped legacy thread; never reassign
             if title and (not row.title or row.title == "New Chat"):
                 row.title = title
             if metadata:
@@ -468,6 +503,7 @@ class SQLAlchemyThreadStore(BaseThreadStore):
         *,
         user_id: str | None = None,
         include_deleted: bool = False,
+        agent_id: str | None = None,
     ) -> dict[str, Any] | None:
         async with self.session_factory() as session:
             stmt = select(self.model).where(self.model.thread_id == thread_id)
@@ -475,6 +511,7 @@ class SQLAlchemyThreadStore(BaseThreadStore):
                 stmt = stmt.where(self.model.is_deleted.is_(False))
             if user_id is not None:
                 stmt = stmt.where((self.model.user_id.is_(None)) | (self.model.user_id == user_id))
+            stmt = self._scope_agent(stmt, agent_id)
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
             return thread_row_to_dict(row) if row is not None else None
@@ -486,6 +523,7 @@ class SQLAlchemyThreadStore(BaseThreadStore):
         include_deleted: bool = False,
         limit: int | None = None,
         offset: int = 0,
+        agent_id: str | None = None,
     ) -> list[dict[str, Any]]:
         async with self.session_factory() as session:
             stmt = select(self.model)
@@ -493,6 +531,7 @@ class SQLAlchemyThreadStore(BaseThreadStore):
                 stmt = stmt.where(self.model.is_deleted.is_(False))
             if user_id is not None:
                 stmt = stmt.where((self.model.user_id.is_(None)) | (self.model.user_id == user_id))
+            stmt = self._scope_agent(stmt, agent_id)
             stmt = stmt.order_by(self.model.last_active_at.desc(), self.model.id.desc())
             if offset:
                 stmt = stmt.offset(offset)
@@ -508,11 +547,13 @@ class SQLAlchemyThreadStore(BaseThreadStore):
         *,
         user_id: str | None = None,
         hard: bool = False,
+        agent_id: str | None = None,
     ) -> bool:
         async with self.session_factory() as session, session.begin():
             stmt = select(self.model).where(self.model.thread_id == thread_id)
             if user_id is not None:
                 stmt = stmt.where((self.model.user_id.is_(None)) | (self.model.user_id == user_id))
+            stmt = self._scope_agent(stmt, agent_id)
             result = await session.execute(stmt)
             row = result.scalar_one_or_none()
             if row is None:

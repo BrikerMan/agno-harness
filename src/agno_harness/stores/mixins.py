@@ -141,6 +141,8 @@ class ThreadRecordMixin:
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     thread_id: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     user_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    # Owner agent. ``NULL`` for rows written before 0.2.5; scoped queries skip them.
+    agent_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     title: Mapped[str] = mapped_column(String(256), default="New Chat", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="running", index=True, nullable=False)
     is_paused: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

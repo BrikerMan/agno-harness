@@ -1126,3 +1126,23 @@ async def test_upstream_stream_read_timeout():
     assert "RUN_ERROR" in types
     error_event = next(e for e in events if getattr(e, "type", None) == EventType.RUN_ERROR)
     assert "timed out after 0.1s" in error_event.message
+
+
+class TestAgentScope:
+    async def test_threads_are_stamped_and_scoped_to_the_runtime_agent(self):
+        a = runtime_for([run_completed()], agent_id="admin-agent")
+        await stream(a)
+        thread = await a.get_thread("thread-1")
+        assert thread is not None and thread["agentId"] == "admin-agent"
+
+        # Same stores, different agent: the thread is invisible.
+        b = runtime_for([run_completed()], agent_id="ipv-agent", stores=a.stores)
+        assert await b.list_threads() == []
+        assert await b.get_thread("thread-1") is None
+        assert [t["threadId"] for t in await a.list_threads()] == ["thread-1"]
+
+    async def test_agent_id_defaults_to_the_agent_id_and_is_optional(self):
+        agent = FakeAgent([run_completed()])
+        agent.id = "from-agent"
+        assert AgentRuntime(agent=agent).agent_id == "from-agent"
+        assert runtime_for([run_completed()]).agent_id is None
