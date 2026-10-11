@@ -197,3 +197,106 @@ def test_write_and_patch(tmp_path: Path):
     # 5. Security escape on write
     esc_write = rw_tk.write_file("../../hacked.txt", "bad")
     assert "Security error" in esc_write
+
+
+# ── credential guard ──────────────────────────────────────────────────────
+
+
+def _secrets_workspace(tmp_path: Path) -> Path:
+    ws = tmp_path / "ws"
+    (ws / ".ssh").mkdir(parents=True)
+    (ws / "config").mkdir()
+    (ws / "notes.md").write_text("token=abc plain note\n")
+    (ws / ".env").write_text("API_KEY=sk-secret\n")
+    (ws / ".env.example").write_text("API_KEY=changeme\n")
+    (ws / "server.pem").write_text("-----BEGIN PRIVATE KEY-----\n")
+    (ws / ".ssh" / "config").write_text("Host secret\n")
+    (ws / "config" / "credentials.json").write_text('{"secret": "sk-secret"}\n')
+    (ws / "prod.tfvars").write_text("db_password = sk-secret\n")
+    return ws
+
+
+def test_is_credential_path():
+    from agno_harness.tools.workspace import is_credential_path
+
+    for blocked in (
+        ".env",
+        ".env.production",
+        "a/b/.env",
+        "server.pem",
+        "keys/id_rsa",
+        ".ssh/config",
+        "home/.aws/credentials",
+        "config/credentials.json",
+        "infra/prod.tfvars",
+        "state.tfstate",
+    ):
+        assert is_credential_path(blocked), blocked
+    for allowed in (
+        ".env.example",
+        ".env.sample",
+        "notes.md",
+        "src/environment.py",
+        "id_rsa.pub.md",
+        "docs/credentials-guide.md",
+    ):
+        assert not is_credential_path(allowed), allowed
+
+
+def test_workspace_refuses_credential_reads(tmp_path: Path):
+    tk = WorkspaceToolkit(workspace_dir=_secrets_workspace(tmp_path))
+
+    for path in (".env", "server.pem", ".ssh/config", "config/credentials.json", "prod.tfvars"):
+        out = tk.read(path=path)
+        assert "Access denied" in out, path
+        assert "sk-secret" not in out
+
+    assert "changeme" in tk.read(path=".env.example")
+    assert "plain note" in tk.read(path="notes.md")
+
+
+def test_workspace_hides_credentials_from_listings_and_search(tmp_path: Path):
+    tk = WorkspaceToolkit(workspace_dir=_secrets_workspace(tmp_path))
+
+    listing = tk.read(path="")
+    assert "notes.md" in listing
+    assert "server.pem" not in listing
+    assert "prod.tfvars" not in listing
+
+    assert "credentials.json" not in tk.glob(pattern="**/*")
+    assert "credentials.json" not in tk.list_files()
+    assert "server.pem" not in tk.list_files()
+
+    # The secret value lives in four files; none may surface through grep.
+    hits = tk.grep(pattern="sk-secret", path=".")
+    assert "Found 0 match" in hits
+    assert "plain note" in tk.grep(pattern="plain note")
+
+    assert "credentials.json" not in tk.list_artifacts()
+
+
+def test_workspace_allow_paths_reopens_specific_files(tmp_path: Path):
+    tk = WorkspaceToolkit(
+        workspace_dir=_secrets_workspace(tmp_path),
+        allow_paths=["config/credentials.json"],
+    )
+
+    assert "sk-secret" in tk.read(path="config/credentials.json")
+    assert "Access denied" in tk.read(path=".env")
+
+
+def test_workspace_credential_guard_can_be_disabled(tmp_path: Path):
+    tk = WorkspaceToolkit(workspace_dir=_secrets_workspace(tmp_path), block_credentials=False)
+    assert "sk-secret" in tk.read(path=".env")
+
+
+def test_workspace_write_tools_respect_the_credential_guard(tmp_path: Path):
+    ws = _secrets_workspace(tmp_path)
+    tk = WorkspaceToolkit(workspace_dir=ws, allow_write=True)
+
+    assert "Access denied" in tk.write_file(path=".env", content="X=1\n")
+    assert "Access denied" in tk.patch_file(
+        path=".env", search_block="sk-secret", replace_block="x"
+    )
+    assert (ws / ".env").read_text() == "API_KEY=sk-secret\n"
+    assert "Successfully" in tk.write_file(path="out.md", content="ok")

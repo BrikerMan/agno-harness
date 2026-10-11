@@ -62,6 +62,8 @@ class AgnoHarnessDb:
         self.auto_create = auto_create
         self._owns_engine = owns_engine
         self._tables_ensured = False
+        # Set by ``from_agno_db``; lets ``ensure_tables`` warn about an Agno v2 schema.
+        self.agno_db: Any = None
 
         if session_factory is not None:
             self.session_factory = session_factory
@@ -83,6 +85,8 @@ class AgnoHarnessDb:
         """Verify harness tables exist; create if auto_create=True and no Alembic detected."""
         if self._tables_ensured:
             return
+
+        await self._warn_if_agno_db_unmigrated()
 
         if self.engine is None:
             async with self.session_factory() as session:
@@ -131,6 +135,23 @@ class AgnoHarnessDb:
             )
 
         self._tables_ensured = True
+
+    async def _warn_if_agno_db_unmigrated(self) -> None:
+        """Log (never raise) when the paired Agno db still has the v2 schema."""
+        if self.agno_db is None:
+            return
+        try:
+            from .agno_migration import agno_db_needs_migration
+
+            if await agno_db_needs_migration(self.agno_db):
+                logger.warning(
+                    "[agno-harness] The Agno database still has the v2 schema. Agno v3 reads "
+                    "runs from a separate table, so history may look empty and seal/checkpoint "
+                    "writes will not line up. Back up the database, stop writers, then run "
+                    "`agno-harness db migrate-agno` or agno_harness.db.migrate_agno_db(db)."
+                )
+        except Exception as exc:  # noqa: BLE001 - a diagnostic must not block startup
+            logger.debug("[agno-harness] could not check the Agno schema version: %s", exc)
 
     def build_stores(
         self,
@@ -205,6 +226,18 @@ class AgnoHarnessDb:
         # Synchronize Agno table prefix
         apply_table_prefix(agno_db, prefix=prefix)
 
+        harness_db = cls._derive_from_agno_db(agno_db, prefix=prefix, auto_create=auto_create)
+        harness_db.agno_db = agno_db
+        return harness_db
+
+    @classmethod
+    def _derive_from_agno_db(
+        cls,
+        agno_db: Any,
+        *,
+        prefix: str | None,
+        auto_create: bool,
+    ) -> AgnoHarnessDb:
         db_file = getattr(agno_db, "db_file", None)
         db_url = getattr(agno_db, "db_url", None)
         async_factory = getattr(agno_db, "async_session_factory", None)

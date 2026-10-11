@@ -26,6 +26,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -135,6 +136,78 @@ async def _upsert_db_session(db: Any, session: AgentSession) -> Any:
     return res
 
 
+#: Pauses between reads while waiting for Agno to flush an interrupted run.
+_RUN_FLUSH_BACKOFF = (0.05, 0.15, 0.3)
+
+
+async def _find_run_with_grace(
+    db: Any, session_id: str, run_id: str | None
+) -> tuple[AgentSession | None, Any]:
+    """Load the session and the run to seal.
+
+    On cancel or error Agno writes the interrupted run from its own cleanup
+    path, which can land after the harness starts sealing. When ``run_id`` is
+    known but not stored yet, re-read a few times before falling back to the
+    most recent run (the previous behaviour).
+    """
+    attempts = len(_RUN_FLUSH_BACKOFF) + 1 if run_id else 1
+    session: AgentSession | None = None
+    for attempt in range(attempts):
+        session = await _get_db_session(db, session_id)
+        runs = getattr(session, "runs", None) if session else None
+        if runs:
+            if not run_id:
+                return session, runs[-1]
+            found = next((r for r in runs if getattr(r, "run_id", None) == run_id), None)
+            if found is not None:
+                return session, found
+        if attempt < attempts - 1:
+            await asyncio.sleep(_RUN_FLUSH_BACKOFF[attempt])
+    runs = getattr(session, "runs", None) if session else None
+    if not runs:
+        return session, None
+    logger.warning(
+        "run %s not stored in session %s after waiting; sealing the latest run instead",
+        run_id,
+        session_id,
+    )
+    return session, runs[-1]
+
+
+async def _persist_run_change(
+    db: Any,
+    session: AgentSession,
+    run: Any,
+    *,
+    session_changed: bool = False,
+) -> None:
+    """Persist an edited run (and optionally its session) on Agno v3 storage.
+
+    Agno v3 keeps runs in their own table and ``upsert_session`` no longer
+    rewrites them, so an edit to ``run.metadata`` / ``run.messages`` is lost
+    unless the run itself is upserted. Backends not yet ported raise
+    ``NotImplementedError`` from ``upsert_run``; those still persist runs inline
+    through ``upsert_session``.
+    """
+    upsert_run = getattr(db, "upsert_run", None)
+    if callable(upsert_run):
+        try:
+            res = upsert_run(
+                run,
+                session_id=session.session_id,
+                user_id=getattr(session, "user_id", None),
+            )
+            if inspect.isawaitable(res):
+                await res
+        except NotImplementedError:
+            await _upsert_db_session(db, session)
+            return
+        if session_changed:
+            await _upsert_db_session(db, session)
+        return
+    await _upsert_db_session(db, session)
+
+
 async def seal_session_run(
     db: Any,
     session_id: str,
@@ -155,15 +228,9 @@ async def seal_session_run(
     if db is None or not session_id:
         return False
 
-    session = await _get_db_session(db, session_id)
-    if not session or not session.runs:
+    session, target_run = await _find_run_with_grace(db, session_id, run_id)
+    if session is None or target_run is None:
         return False
-
-    target_run = None
-    if run_id:
-        target_run = next((r for r in session.runs if getattr(r, "run_id", None) == run_id), None)
-    if target_run is None:
-        target_run = session.runs[-1]
 
     if getattr(target_run, "metadata", None) is None:
         target_run.metadata = {}
@@ -248,7 +315,7 @@ async def seal_session_run(
                     ensure_ascii=False,
                 )
 
-    await _upsert_db_session(db, session)
+    await _persist_run_change(db, session, target_run)
     logger.info(
         "Successfully sealed run %s in session %s (reason: %s, content_len: %d)",
         getattr(target_run, "run_id", None),
@@ -388,7 +455,7 @@ async def attach_checkpoint_to_session(
         session.session_data["latest_checkpoint"] = checkpoint_data
         session.session_data["latest_checkpoint_run_id"] = getattr(target_run, "run_id", None)
 
-    await _upsert_db_session(db, session)
+    await _persist_run_change(db, session, target_run, session_changed=True)
     logger.info(
         "Attached checkpoint to run %s in session %s (%d chars)",
         getattr(target_run, "run_id", None),
@@ -408,6 +475,14 @@ def install_sealed_history_hook() -> None:
     metadata, all prior runs are pruned from history, injecting the checkpoint
     as a system message and keeping only the checkpoint run's query/final answer
     plus subsequent runs.
+
+    Agno v3 ``get_messages(skip_statuses=...)`` filters by status for every run,
+    so passing ``skip_statuses=[]`` would also replay cancelled runs that were
+    never sealed. Flipping the status of sealed runs only (for the duration of
+    the call) keeps the selection per-run. Agno's own bounded history read
+    (``get_session_messages(last_n_runs=N)``) drops cancelled/error runs in SQL
+    before this hook sees them; the run pipeline loads the whole session, which
+    is the path this hook serves.
     """
     global _HOOK_INSTALLED
     if _HOOK_INSTALLED:

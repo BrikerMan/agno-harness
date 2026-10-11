@@ -46,7 +46,7 @@ Why `OpenAILike` + `telemetry=False`: [cookbook 02](../00-agent-cookbook/02-web-
 
 ## Tools / filters / `ui_block`
 
-Tools return JSON the model can summarize. Shared state goes on `run_context.session_state`. Multi-step plans use `TodoToolkit` ([03 Todos](../02-interactions/03-todo/README.md)). Long files use `StreamingArtifactToolkit` ([08](../02-interactions/08-streaming-artifacts.md)). Progress cards: `ui_block` / `emit_item`. HITL declarations: [HITL 01](../02-interactions/02-hitl-and-actions/01-protocol.md).
+Tools return JSON the model can summarize. Shared state goes on `run_context.session_state`. Multi-step plans use `TodoToolkit` ([03 Todos](../02-interactions/03-todo/README.md)). Long files use `StreamingArtifactToolkit` ([08](../02-interactions/08-streaming-artifacts.md)). Progress cards: `ui_block` / `emit_item`. HITL declarations: [HITL 01](../02-interactions/02-hitl-and-actions/01-protocol.md). `WorkspaceToolkit` refuses credential files (`.env`, `*.pem`, `.ssh/`, `credentials.json`, ...) by default; re-allow one with `allow_paths=["config/credentials.json"]`.
 
 ```python
 runtime.register_tool_filter(HideToolFilter({"load_skill", "think"}))

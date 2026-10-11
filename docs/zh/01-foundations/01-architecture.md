@@ -86,6 +86,8 @@
 4. `sinks/` **审计解耦**：
   - 归档消息与主执行流程完全异步解耦，审计写入失败决不中断用户消息流。
 
+**Agno 版本。** agno-harness 0.3 要求 Agno v3（`agno>=3.0.10`）。v3 把 run 存进独立的表；变化和 v2 数据库的迁移步骤见 [双存储](05-persistence-and-longruns/01-dual-storage.md)。
+
 ---
 
 ## 4. Sequencer / Module / 测试分层

@@ -68,6 +68,7 @@ from .db import (
     AgnoHarnessSqliteDb,
     AlembicMigrator,
     MissingHarnessTablesError,
+    migrate_agno_db,
 )
 from .helpers import (
     begin_lark_app_registration,
@@ -205,7 +206,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.2.6"
+__version__ = "0.3.0"
 
 
 def __getattr__(name: str) -> Any:
@@ -416,6 +417,7 @@ __all__ = [
     "make_agui_router",
     "make_checkpoint_hook",
     "make_relay_router",
+    "migrate_agno_db",
     "make_run_scope",
     "make_thread_title_hook",
     "make_thread_title_pre_hook",

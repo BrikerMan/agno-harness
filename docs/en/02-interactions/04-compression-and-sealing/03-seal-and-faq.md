@@ -5,7 +5,7 @@ A refresh, drop, or killed process can leave “tool call started, no result” 
 ```python
 from agno_harness.runtime.closure import close_dangling_tool_calls, seal_session_run
 
-seal_session_run(session)
+await seal_session_run(db, session_id, run_id, reason="Stopped by user")
 ```
 
 The seal:
@@ -14,6 +14,10 @@ The seal:
 2. Inserts a synthetic cancel record (for example client disconnect);
 3. Marks the run in a continuable terminal state;
 4. Keeps the next-turn history on the OpenAI alternating contract.
+
+Persistence on Agno v3: the seal edits the run (`metadata["sealed"]`, the closing tool messages, any partial text) and writes it with `db.upsert_run(...)`. `upsert_session` no longer stores runs, so an edit saved only through it would be lost and the next turn would still hit the dangling call. Checkpoints (`attach_checkpoint_to_session`) use the same path. The real status (`CANCELLED` / `ERROR`) is never rewritten in storage; the history hook treats a sealed run as part of the conversation only while building the next prompt.
+
+Agno writes the interrupted run from its own cleanup, which can land after the harness starts sealing. The seal re-reads for up to about half a second before it falls back to the latest run.
 
 Hang it on post-run / abnormal-exit. Orthogonal to compression: compression owns tokens; the seal owns dirty tool calls.
 

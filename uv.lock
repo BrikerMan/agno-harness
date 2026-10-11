@@ -53,7 +53,7 @@ wheels = [
 
 [[package]]
 name = "agno-harness"
-version = "0.2.6"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -136,7 +136,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ag-ui-protocol", specifier = ">=0.1.19" },
-    { name = "agno", specifier = ">=2.8.7" },
+    { name = "agno", specifier = ">=3.0.10" },
     { name = "agno-harness", extras = ["fastapi", "teams", "lark", "sqlite", "postgres", "redis", "otel"], marker = "extra == 'all'" },
     { name = "aiosqlite", marker = "extra == 'sqlite'", specifier = ">=0.20" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.30" },
@@ -144,7 +144,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "jsonpatch", specifier = ">=1.33" },
     { name = "lark-oapi", marker = "extra == 'lark'", specifier = ">=1.2.0" },
-    { name = "openinference-instrumentation-agno", marker = "extra == 'otel'", specifier = ">=0.1.29" },
+    { name = "openinference-instrumentation-agno", marker = "extra == 'otel'", specifier = ">=1.0.10" },
     { name = "opentelemetry-api", marker = "extra == 'otel'", specifier = ">=1.27" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otel'", specifier = ">=1.27" },
     { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.27" },
@@ -170,7 +170,7 @@ dev = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "openai", specifier = ">=1.50" },
-    { name = "openinference-instrumentation-agno", specifier = ">=0.1.29" },
+    { name = "openinference-instrumentation-agno", specifier = ">=1.0.10" },
     { name = "opentelemetry-api", specifier = ">=1.27" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27" },
     { name = "opentelemetry-sdk", specifier = ">=1.27" },

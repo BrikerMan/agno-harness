@@ -46,7 +46,7 @@ runtime.on_post_run(make_checkpoint_hook(runtime))
 
 ## Tools / 过滤器 / `ui_block`
 
-工具返回模型能摘要的 JSON。共享状态改 `run_context.session_state`。多步规划挂 `TodoToolkit`（[03 Todo](../02-interactions/03-todo/README.md)）。长文件挂 `StreamingArtifactToolkit`（[08](../02-interactions/08-streaming-artifacts.md)）。进度卡：`ui_block` / `emit_item`。HITL 声明见 [HITL 01](../02-interactions/02-hitl-and-actions/01-protocol.md)。
+工具返回模型能摘要的 JSON。共享状态改 `run_context.session_state`。多步规划挂 `TodoToolkit`（[03 Todo](../02-interactions/03-todo/README.md)）。长文件挂 `StreamingArtifactToolkit`（[08](../02-interactions/08-streaming-artifacts.md)）。进度卡：`ui_block` / `emit_item`。HITL 声明见 [HITL 01](../02-interactions/02-hitl-and-actions/01-protocol.md)。`WorkspaceToolkit` 默认拒绝读写凭据文件（`.env`、`*.pem`、`.ssh/`、`credentials.json` 等）；需要放行某个文件时用 `allow_paths=["config/credentials.json"]`。
 
 ```python
 runtime.register_tool_filter(HideToolFilter({"load_skill", "think"}))

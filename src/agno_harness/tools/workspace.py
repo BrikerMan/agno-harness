@@ -17,7 +17,8 @@ import logging
 import mimetypes
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,48 @@ _DEFAULT_HIDDEN_NAMES: frozenset[str] = frozenset(
 )
 
 
+# Files an agent has no business reading: secrets and keys. Matched on the
+# lower-cased file name, or on any directory component of the relative path.
+_CREDENTIAL_FILE_PATTERNS: tuple[str, ...] = (
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "credentials",
+    "credentials.json",
+    "*.tfvars",
+    "*.tfstate",
+    ".netrc",
+    ".pgpass",
+    ".npmrc",
+    ".pypirc",
+)
+_CREDENTIAL_DIR_NAMES: frozenset[str] = frozenset({".ssh", ".aws", ".gnupg", ".kube"})
+# Committed templates carry no secrets, so ``.env.example`` stays readable.
+_TEMPLATE_SUFFIXES: tuple[str, ...] = (".example", ".sample", ".template", ".dist")
+
+
+def is_credential_path(rel_path: str) -> bool:
+    """True when a workspace-relative path looks like a secret or key file."""
+    parts = [p for p in rel_path.replace("\\", "/").split("/") if p and p != "."]
+    if not parts:
+        return False
+    if any(part.lower() in _CREDENTIAL_DIR_NAMES for part in parts[:-1]):
+        return True
+    name = parts[-1].lower()
+    if name in _CREDENTIAL_DIR_NAMES:
+        return True
+    if name.endswith(_TEMPLATE_SUFFIXES):
+        return False
+    return any(fnmatch(name, pattern) for pattern in _CREDENTIAL_FILE_PATTERNS)
+
+
 class WorkspaceToolkit(Toolkit):
     """Agno Toolkit providing safe, isolated workspace inspection and manipulation.
 
@@ -48,6 +91,13 @@ class WorkspaceToolkit(Toolkit):
     When ``allow_write=True``, writing and patching tools are also registered:
     - ``write_file(path, content, mode="write")``: Write or append to a file.
     - ``patch_file(path, search_block, replace_block)``: Exact Search & Replace patch.
+
+    Credential files are refused by default: ``.env`` (but not ``.env.example``),
+    ``*.pem``, ``*.key``, ``.ssh/``, ``.aws/``, ``credentials.json``, ``*.tfvars``
+    and similar. They are also left out of listings and searches. Re-allow
+    specific paths with ``allow_paths=["config/credentials.json"]`` (glob patterns
+    relative to the workspace root), or turn the guard off with
+    ``block_credentials=False``.
     """
 
     def __init__(
@@ -62,8 +112,12 @@ class WorkspaceToolkit(Toolkit):
         instructions: str | None = None,
         add_instructions: bool = True,
         hidden_names: frozenset[str] | None = None,
+        block_credentials: bool = True,
+        allow_paths: Sequence[str] = (),
         **toolkit_kwargs: Any,
     ) -> None:
+        self.block_credentials = block_credentials
+        self.allow_paths = tuple(allow_paths)
         self.workspace_dir = workspace_dir
         self.file_resolver = file_resolver
         self.allow_write = allow_write
@@ -158,6 +212,18 @@ class WorkspaceToolkit(Toolkit):
             return True
         return path.name.startswith(".") and path.name not in {".", ".."}
 
+    def _is_blocked(self, path: Path, root: Path) -> bool:
+        """True when ``path`` is a credential file that ``allow_paths`` does not re-allow."""
+        if not self.block_credentials:
+            return False
+        try:
+            rel = path.relative_to(root).as_posix()
+        except ValueError:
+            return False
+        if any(fnmatch(rel, pattern) for pattern in self.allow_paths):
+            return False
+        return is_credential_path(rel)
+
     def _resolve_target_path(self, rel_path: str, root: Path) -> tuple[Path | None, str | None]:
         clean = rel_path.strip().lstrip("/\\")
         if clean.startswith("./"):
@@ -176,6 +242,12 @@ class WorkspaceToolkit(Toolkit):
             target.relative_to(root)
         except ValueError:
             return None, f"Security error: path {rel_path!r} escapes workspace root {root}"
+
+        if self._is_blocked(target, root):
+            return None, (
+                f"Access denied: {rel_path!r} looks like a credential file. "
+                "Ask the operator to list it in `allow_paths` if the agent needs it."
+            )
 
         return target, None
 
@@ -219,7 +291,7 @@ class WorkspaceToolkit(Toolkit):
                 if self.max_entries is not None and index >= self.max_entries:
                     entries.append(f"  ... ({len(children) - index} more items truncated)")
                     break
-                if self._is_hidden(child):
+                if self._is_hidden(child) or self._is_blocked(child, root):
                     continue
                 kind = "dir" if child.is_dir() else "file"
                 try:
@@ -306,7 +378,7 @@ class WorkspaceToolkit(Toolkit):
                     resolved.relative_to(root)
                 except ValueError:
                     continue
-                if self._is_hidden(resolved):
+                if self._is_hidden(resolved) or self._is_blocked(resolved, root):
                     continue
                 matches.append(resolved.relative_to(root).as_posix())
                 if self.max_matches is not None and len(matches) >= self.max_matches:
@@ -361,7 +433,7 @@ class WorkspaceToolkit(Toolkit):
                 files = [
                     p
                     for p in sorted(target_path.rglob("*"))
-                    if p.is_file() and not self._is_hidden(p)
+                    if p.is_file() and not self._is_hidden(p) and not self._is_blocked(p, root)
                 ]
             except Exception as exc:
                 return f"Error traversing path '{path}': {exc}"
@@ -409,7 +481,7 @@ class WorkspaceToolkit(Toolkit):
             files = [
                 p.relative_to(root).as_posix()
                 for p in sorted(root.glob(pattern))
-                if p.is_file() and not self._is_hidden(p)
+                if p.is_file() and not self._is_hidden(p) and not self._is_blocked(p, root)
             ]
         except Exception as exc:
             return f"Error listing workspace files: {exc}"
@@ -433,7 +505,12 @@ class WorkspaceToolkit(Toolkit):
         try:
             files: list[str] = []
             for p in sorted(root.rglob("*")):
-                if p.is_file() and p.suffix.lower() in valid_exts and not self._is_hidden(p):
+                if (
+                    p.is_file()
+                    and p.suffix.lower() in valid_exts
+                    and not self._is_hidden(p)
+                    and not self._is_blocked(p, root)
+                ):
                     files.append(p.relative_to(root).as_posix())
                     if self.max_matches and len(files) >= self.max_matches:
                         break

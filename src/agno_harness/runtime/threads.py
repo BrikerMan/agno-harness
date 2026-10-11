@@ -349,6 +349,10 @@ class ThreadService:
             return []
         # Prefer Agno's raw rows: list endpoints must not hydrate full RunOutput
         # graphs. Fall back if an older/fake db rejects the kwargs.
+        # Agno v3 attaches each session's runs from the runs table
+        # (``include_runs=True``). Thread summaries need them for the title and
+        # ``runCount``, so this stays on; it is only the fallback when the
+        # thread store has no rows.
         kwargs: dict[str, Any] = {
             "user_id": user_id,
             "deserialize": False,

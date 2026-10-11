@@ -82,6 +82,8 @@ In `agno-harness`, each core component has a single job:
 4. `sinks/` **are decoupled from the hot path**:
   - Audit writes are async from the main run. A failed audit write must not interrupt the user stream.
 
+**Agno version.** agno-harness 0.3 requires Agno v3 (`agno>=3.0.10`). v3 stores runs in their own table; see [Dual storage](05-persistence-and-longruns/01-dual-storage.md) for what changes and how to migrate a v2 database.
+
 ---
 
 ## 4. Sequencer / Module / test layering

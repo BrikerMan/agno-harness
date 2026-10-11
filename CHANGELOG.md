@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0
+
+Requires **Agno v3** (`agno>=3.0.10`). Agno v2 is no longer supported.
+
+### Fixed
+
+- **Seal and checkpoint were not persisted on Agno v3.** v3 stores each run in its own table and `upsert_session` no longer writes runs, so `seal_session_run` and `attach_checkpoint_to_session` returned `True` while the edited run was lost. Dangling tool calls stayed open and compression checkpoints never took effect. Both now write through `db.upsert_run(...)` (sync and async dbs); backends without `upsert_run` still fall back to `upsert_session`.
+- `seal_session_run` waits briefly (up to about 0.5 s) for Agno to flush the interrupted run before falling back to the latest run, so it no longer races Agno's own cancel cleanup.
+
+### Added
+
+- **`agno-harness db migrate-agno`** (`--sqlite FILE` or `--url URL`, optional `--prefix` / `--session-table`) and `agno_harness.migrate_agno_db(db)`: run Agno's v2 to v3 migration and print a report. Non-destructive; never calls Agno's `cleanup_legacy_runs_*` and never passes `force=True`.
+- `AgnoHarnessDb.from_agno_db(...)` logs a warning at startup when the paired Agno database still has the v2 schema.
+- **`WorkspaceToolkit` refuses credential files by default**: `.env` (not `.env.example`), `*.pem`, `*.key`, `.ssh/`, `.aws/`, `credentials.json`, `*.tfvars` and similar are rejected for read and write, and left out of listings and search. Re-allow paths with `allow_paths=[...]`; turn the guard off with `block_credentials=False`.
+- Docs: Agno v3 storage and the upgrade steps ([dual storage](docs/en/01-foundations/05-persistence-and-longruns/01-dual-storage.md)), and [Agno v3 adoption notes](docs/en/04-deep-dive-and-faq/04-agno-v3-adoption-notes.md).
+
+### Changed
+
+- Dependencies: `agno>=3.0.10`, `openinference-instrumentation-agno>=1.0.10`.
+- **Upgrade:** back up the database, stop writers, then run `agno-harness db migrate-agno` before starting 0.3.
+- Bump package version to `0.3.0`.
+
 ## 0.2.6
 
 ### Added

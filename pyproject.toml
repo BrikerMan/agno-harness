@@ -1,6 +1,6 @@
 [project]
 name = "agno-harness"
-version = "0.2.6"
+version = "0.3.0"
 description = "Enterprise agent scaffolding: you write the business and the cards; resume, compression, and channels are production-ready"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
-    "agno>=2.8.7",
+    "agno>=3.0.10",
     "ag-ui-protocol>=0.1.19",
     "httpx>=0.27",
     "jsonpatch>=1.33",
@@ -58,7 +58,7 @@ otel = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
-    "openinference-instrumentation-agno>=0.1.29",
+    "openinference-instrumentation-agno>=1.0.10",
 ]
 all = [
     "agno-harness[fastapi,teams,lark,sqlite,postgres,redis,otel]",
@@ -95,7 +95,7 @@ dev = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
-    "openinference-instrumentation-agno>=0.1.29",
+    "openinference-instrumentation-agno>=1.0.10",
     "openai>=1.50",
     "redis>=5.0",
     "pycryptodome>=3.20",

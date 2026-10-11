@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import typer
 from dotenv import load_dotenv
@@ -34,6 +35,8 @@ console = Console()
 
 lark_app = typer.Typer(name="lark", help="Lark (Feishu) channel tools and onboarding wizard")
 teams_app = typer.Typer(name="teams", help="Microsoft Teams channel tools and onboarding wizard")
+db_app = typer.Typer(name="db", help="Database maintenance")
+app.add_typer(db_app, name="db")
 app.add_typer(lark_app, name="lark")
 app.add_typer(teams_app, name="teams")
 
@@ -368,6 +371,71 @@ def register_wizard(
         interactive_lark_onboarding(prompt_input=True, save_to_env=True)
     else:
         console.print(f"[red]Unknown channel: {channel}. Choose 'teams' or 'lark'.[/red]")
+
+
+@db_app.command("migrate-agno")
+def db_migrate_agno_cmd(
+    sqlite: str = typer.Option("", "--sqlite", help="Path to the Agno SQLite database file"),
+    url: str = typer.Option("", "--url", help="Agno database URL (postgresql+psycopg://...)"),
+    prefix: str = typer.Option(
+        "", "--prefix", help="Table prefix, if the app uses one (see AGNO_HARNESS_TABLE_PREFIX)"
+    ),
+    session_table: str = typer.Option(
+        "", "--session-table", help="Sessions table name, if the app overrides agno_sessions"
+    ),
+    yes: bool = typer.Option(False, "--yes", help="Skip the backup confirmation"),
+) -> None:
+    """Migrate an Agno v2 database to the v3 schema (runs table, user_id columns).
+
+    Non-destructive: the legacy runs column is kept. This command never runs
+    Agno's cleanup and never passes force=True.
+    """
+    if bool(sqlite) == bool(url):
+        console.print("[red]Pass exactly one of --sqlite or --url.[/red]")
+        raise typer.Exit(code=2)
+
+    from ..db.agno_migration import migrate_agno_db
+    from ..stores.prefix import apply_table_prefix
+
+    if not yes:
+        console.print(
+            "Take a restorable backup and stop every application writer first. "
+            "The migration keeps legacy run history, but only a backup can restore it."
+        )
+        if not typer.confirm("Backup taken and writers stopped?"):
+            raise typer.Exit(code=1)
+
+    agno_db: Any
+    table_kwargs: dict[str, Any] = {"session_table": session_table} if session_table else {}
+    try:
+        if sqlite:
+            from agno.db.sqlite import SqliteDb
+
+            agno_db = SqliteDb(db_file=sqlite, **table_kwargs)
+        else:
+            from agno.db.postgres import PostgresDb
+
+            agno_db = PostgresDb(db_url=url, **table_kwargs)
+    except ImportError as exc:
+        console.print(f"[red]Missing database driver: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    if prefix:
+        apply_table_prefix(agno_db, prefix=prefix)
+
+    report = asyncio.run(migrate_agno_db(agno_db))
+    console.print(
+        f"Schema version: {report.version_before or 'unstamped'} -> "
+        f"{report.version_after or 'unstamped'}"
+    )
+    console.print(f"Runs table: {report.runs_table}")
+    if report.sample_run_ids:
+        console.print(f"Sample run ids: {', '.join(report.sample_run_ids)}")
+    for note in report.notes:
+        console.print(f"- {note}")
+    if not report.migrated:
+        console.print("[yellow]The schema is not stamped v3. Check the logs above.[/yellow]")
+        raise typer.Exit(code=1)
 
 
 def main() -> None:

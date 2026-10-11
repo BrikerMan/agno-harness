@@ -5,7 +5,7 @@
 ```python
 from agno_harness.runtime.closure import close_dangling_tool_calls, seal_session_run
 
-seal_session_run(session)
+await seal_session_run(db, session_id, run_id, reason="Stopped by user")
 ```
 
 密封会：
@@ -14,6 +14,10 @@ seal_session_run(session)
 2. 插入合成取消记录（例如客户端断开）；
 3. 把该 run 标成可继续的终态；
 4. 保证下一轮发给模型的顺序符合 OpenAI 交替契约。
+
+Agno v3 下的持久化：封口会修改 run（`metadata["sealed"]`、补齐的 tool 结果消息、已有的部分文本），并用 `db.upsert_run(...)` 写回。`upsert_session` 已经不再保存 run，只经由它保存的修改会丢，下一轮仍会撞上悬挂的 tool call。Checkpoint（`attach_checkpoint_to_session`）走同一条路径。存储里真实的状态（`CANCELLED` / `ERROR`）不会被改写；历史 hook 只在拼下一轮提示词时，才把已封口的 run 当作对话的一部分。
+
+Agno 在自己的清理路径里写入被中断的 run，可能晚于 harness 开始封口。封口会重读最多约半秒，等不到才回退到最新一个 run。
 
 挂在 post-run / 异常退出路径上。与压缩正交：压缩管 Token，封口管脏 tool call。
 

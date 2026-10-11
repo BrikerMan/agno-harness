@@ -74,6 +74,47 @@ runtime = AgentRuntime(
 
 ---
 
+## Agno v3 存储：run 独立成表
+
+从 Agno v3 开始，session 行不再携带历史。每个 run 是 `<prefix>_runs`（默认 `agno_runs`）里的一行；读取 session 时，`session.runs` 由这张表重建。
+
+对 harness 的影响：
+
+- `db.upsert_session(session)` **不再写 run**。改了 `run.metadata` 或 `run.messages` 再 upsert session，改动会丢。必须用 `db.upsert_run(run, session_id=..., user_id=...)`。
+- `seal_session_run` 和 `attach_checkpoint_to_session` 已经这样做（同步和异步 db 都支持）。尚未适配 v3 的后端，其 `upsert_run` 会抛 `NotImplementedError`，harness 此时回退到 `upsert_session`。
+- 如果你直接查 sessions 表的旧 `runs` 列（看板、导出），改查 `<prefix>_runs`（`run_id`、`session_id`、`run_index`、`run_data`）。
+- 取消和出错的 run 是 Agno 在自己的清理路径里写入的。封口和它赛跑时，会先短暂等待（最多约半秒）该 run 落库，等不到才回退到最新一个 run。
+
+## 升级 Agno v2 数据库
+
+Agno v3 自带非破坏性迁移：把旧 `runs` JSON 列里的每个 run 复制到 `<prefix>_runs`，补上 `user_id` 列，旧列原样保留当作备份。重复执行不会产生重复 run。
+
+1. 先做可恢复的备份，并停掉所有写入方（应用、worker、调度器）。
+2. 执行迁移：
+
+   ```bash
+   agno-harness db migrate-agno --sqlite data/agent.db
+   agno-harness db migrate-agno --url postgresql+psycopg://user:pass@host/db --prefix admin_agent
+   ```
+
+   或者在代码里调用（同步和异步 Agno db 都行）：
+
+   ```python
+   from agno_harness import migrate_agno_db
+
+   report = await migrate_agno_db(agno_db)
+   print(report.version_before, "->", report.version_after, report.sample_run_ids)
+   ```
+
+3. 把旧历史和 `<prefix>_runs` 做**完整**比对，包括抽样之外的 session。抽样无法证明完整。
+4. 完成比对并确认备份可恢复之后，才考虑 Agno 的 `cleanup_legacy_runs_column`（SQL）或 `cleanup_legacy_runs_field`（文档 / KV 存储）。agno-harness 从不调用 cleanup，也从不传 `force=True`。
+
+`AgnoHarnessDb.from_agno_db(...)` 在启动时发现配对的 Agno 数据库仍是 v2 结构，会打一条警告。
+
+`--prefix` 必须和应用使用的前缀一致（`AGNO_HARNESS_TABLE_PREFIX` 或你传入的 `prefix=`），因为前缀也会重命名 Agno 自己的表。如果应用给 `SqliteDb` / `PostgresDb` 传了自定义 `session_table=`，用 `--session-table` 传同一个名字；否则命令会去看 `agno_sessions`，找不到表，就报告无需迁移。向量库需要单独迁移，见 [Agno v3 迁移指南](https://docs.agno.com/other/v3-migration)。
+
+---
+
 ## 两种表初始化模式
 
 ### 模式 A：默认快速启动（非 Alembic 静默建表）
