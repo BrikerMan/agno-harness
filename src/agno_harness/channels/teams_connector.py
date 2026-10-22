@@ -266,3 +266,57 @@ class TeamsConnectorClient:
             (response.text or "")[:300],
         )
         return ""
+
+    def _reaction_url(self, ref: TeamsConversationRef, activity_id: str, reaction_id: str) -> str:
+        base = validate_service_url(ref.service_url)
+        return (
+            f"{base}/v3/conversations/{quote(ref.conversation_id, safe='')}"
+            f"/activities/{quote(activity_id, safe='')}"
+            f"/reactions/{quote(reaction_id, safe='')}"
+        )
+
+    async def put_reaction(
+        self,
+        ref: TeamsConversationRef,
+        activity_id: str,
+        reaction_id: str,
+    ) -> None:
+        """PUT a Teams emoji reaction. Failures are logged and do not fail the turn."""
+        await self._send_reaction("PUT", ref, activity_id, reaction_id)
+
+    async def delete_reaction(
+        self,
+        ref: TeamsConversationRef,
+        activity_id: str,
+        reaction_id: str,
+    ) -> None:
+        """DELETE a Teams emoji reaction. Failures are logged and do not fail the turn."""
+        await self._send_reaction("DELETE", ref, activity_id, reaction_id)
+
+    async def _send_reaction(
+        self,
+        method: str,
+        ref: TeamsConversationRef,
+        activity_id: str,
+        reaction_id: str,
+    ) -> None:
+        if not ref.conversation_id or not activity_id or not reaction_id:
+            return
+        try:
+            url = self._reaction_url(ref, activity_id, reaction_id)
+            token = await self.get_token()
+            client = await self._client()
+            response = await client.request(
+                method, url, headers={"Authorization": f"Bearer {token}"}
+            )
+        except (httpx.HTTPError, TeamsChannelError) as exc:
+            log.debug("Teams reaction %s failed reaction=%s error=%s", method, reaction_id, exc)
+            return
+        if response.status_code >= 300:
+            log.debug(
+                "Teams reaction %s failed reaction=%s status=%s body=%s",
+                method,
+                reaction_id,
+                response.status_code,
+                (response.text or "")[:300],
+            )

@@ -67,3 +67,39 @@ async def test_post_activity_accepts_success_without_id() -> None:
         _ref(), {"type": "message", "text": "hi"}, reply=True
     )
     assert activity_id == ""
+
+
+@pytest.mark.asyncio
+async def test_put_reaction_targets_the_inbound_activity() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        return httpx.Response(200)
+
+    await _client(handler).put_reaction(_ref(), "inbound-1", "think")
+    assert seen["method"] == "PUT"
+    assert seen["path"] == "/amer/v3/conversations/19:chat/activities/inbound-1/reactions/think"
+
+
+@pytest.mark.asyncio
+async def test_delete_reaction_targets_the_ack() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        return httpx.Response(200)
+
+    await _client(handler).delete_reaction(_ref(), "inbound-1", "think")
+    assert seen["method"] == "DELETE"
+    assert seen["path"] == "/amer/v3/conversations/19:chat/activities/inbound-1/reactions/think"
+
+
+@pytest.mark.asyncio
+async def test_put_reaction_swallows_connector_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text="bad reaction")
+
+    await _client(handler).put_reaction(_ref(), "inbound-1", "think")

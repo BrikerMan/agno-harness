@@ -35,6 +35,9 @@ from .teams_connector import (
 log = logging.getLogger("agno_harness.channels.teams")
 
 TEAMS_MESSAGES_PATH = f"{CHANNELS_PATH}/teams/messages"
+# https://learn.microsoft.com/en-us/microsoftteams/platform/agents-in-teams/teams-reactions-reference
+ACK_REACTION_ID = "think"  # 🤔
+DONE_REACTION_ID = "2705_whiteheavycheckmark"  # ✅
 
 _DEFAULT_POLICY: Any = object()
 _HANDLED_ACTIVITY_TYPES = frozenset({"message", "invoke"})
@@ -465,23 +468,61 @@ class TeamsChannel(BaseChannel):
         await self.bot.aclose()
 
     async def ack(self, event: ChannelEvent, emoji: str = "👀") -> Any:
-        """Send a typing activity. Teams has no arbitrary emoji reaction on this API."""
+        """Show 🤔 on the inbound message, then a typing activity.
+
+        ``emoji`` is the harness default. Teams uses the ``think`` reaction,
+        the same ack Ivy posts, rather than that glyph.
+        """
+        del emoji
+        activity_id = event.event_id or None
+        if activity_id:
+            await self._react(event.key, activity_id, ACK_REACTION_ID)
         await self.typing(event.key, True)
-        return {"activity_id": event.event_id, "emoji": emoji, "kind": "typing"}
+        return {"activity_id": activity_id, "reaction_id": ACK_REACTION_ID, "kind": "reaction"}
 
     async def settle(self, destination: ConversationKey, ack_token: Any, emoji: str = "✅") -> None:
-        """Close the turn locally. The outbound message is the visible result.
+        """Remove the 🤔 ack, then stamp ✅ when the turn succeeds.
 
-        The Bot Connector reaction vocabulary is like/heart/laugh/surprised/sad/angry.
-        Stamping one of those on the user's message would not match 👀/✅/❌, so
-        settle does not post a reaction. Typing was already sent by ``ack``.
+        The thinking reaction is cleared on every ending, including failures.
+        ❌ has no reaction id in the set Ivy uses, so a failed turn just drops 🤔.
         """
+        activity_id = ""
+        ack_reaction = ""
+        if isinstance(ack_token, dict):
+            activity_id = str(ack_token.get("activity_id") or "")
+            ack_reaction = str(ack_token.get("reaction_id") or "")
+        if activity_id and ack_reaction:
+            await self._react(destination, activity_id, ack_reaction, remove=True)
+        done_reaction = DONE_REACTION_ID if emoji == "✅" else ""
+        if activity_id and done_reaction:
+            await self._react(destination, activity_id, done_reaction)
         log.info(
-            "Teams turn settled emoji=%s chat=%s ack=%s",
+            "Teams turn settled emoji=%s removed=%s added=%s chat=%s",
             emoji,
+            ack_reaction or "-",
+            done_reaction or "-",
             destination.chat_id,
-            ack_token,
         )
+
+    async def _react(
+        self,
+        destination: ConversationKey,
+        activity_id: str,
+        reaction_id: str,
+        *,
+        remove: bool = False,
+    ) -> None:
+        if self._custom_adapter is not None:
+            return
+        try:
+            ref = self.bot.ref_for(destination.chat_id)
+        except TeamsDeliveryError:
+            log.debug("Teams reaction skipped; no conversation ref chat=%s", destination.chat_id)
+            return
+        if remove:
+            await self.bot.connector.delete_reaction(ref, activity_id, reaction_id)
+            return
+        await self.bot.connector.put_reaction(ref, activity_id, reaction_id)
 
     async def typing(self, destination: ConversationKey, active: bool) -> None:
         if not active:

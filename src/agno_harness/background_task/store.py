@@ -34,11 +34,13 @@ class TaskRecord:
     created_at: str
     started_at: str | None
     completed_at: str | None
+    attempts: int = 0
 
 
 def _row(row: aiosqlite.Row) -> TaskRecord:
     origin_raw = row["origin_json"]
     return TaskRecord(
+        attempts=int(row["attempts"] or 0),
         id=int(row["id"]),
         task_type=row["task_type"],
         subject=row["subject"],
@@ -78,10 +80,17 @@ class BackgroundTaskStore:
                     origin_json TEXT,
                     created_at TEXT NOT NULL,
                     started_at TEXT,
-                    completed_at TEXT
+                    completed_at TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0
                 )
                 """
             )
+            cursor = await db.execute("PRAGMA table_info(background_tasks)")
+            columns = {row["name"] for row in await cursor.fetchall()}
+            if "attempts" not in columns:
+                await db.execute(
+                    "ALTER TABLE background_tasks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
+                )
             await db.commit()
             self._ready = True
         return db
@@ -145,7 +154,8 @@ class BackgroundTaskStore:
         db = await self._db()
         try:
             await db.execute(
-                "UPDATE background_tasks SET status = ?, started_at = ? WHERE id = ?",
+                "UPDATE background_tasks SET status = ?, started_at = ?, attempts = attempts + 1 "
+                "WHERE id = ?",
                 (RUNNING, _now(), task_id),
             )
             await db.commit()
