@@ -201,6 +201,71 @@ async def test_resume_reruns_resumable_tasks_once_and_fails_the_rest(tmp_path) -
     assert sum("failed" in m for m in channel.messages) == 2
 
 
+class _Flaky:
+    task_type = "flaky"
+    description = "Fails a few times."
+    resumable = True
+    max_attempts = 3
+    retry_delay = 0
+
+    def __init__(self, failures: int) -> None:
+        self.failures = failures
+        self.seen: list[int] = []
+
+    async def run(self, task) -> str:
+        self.seen.append(task.attempts)
+        if len(self.seen) <= self.failures:
+            raise ConnectionError("network down")
+        return "done"
+
+
+@pytest.mark.asyncio
+async def test_resumable_task_retries_after_an_error(tmp_path) -> None:
+    service = BackgroundTaskService(str(tmp_path / "agent.db"))
+    flaky = _Flaky(failures=2)
+    service.register(flaky)
+    channel = _Capture()
+    service.bind(SimpleNamespace(channels={"teams": (channel, None)}))
+
+    task_id = await _create(service, "teams", "flaky", {})
+    done = await service.get(task_id)
+    assert done is not None and done.status == "done" and done.attempts == 3
+    assert flaky.seen == [1, 2, 3]
+    assert len(channel.messages) == 1 and "finished" in channel.messages[0]
+
+
+@pytest.mark.asyncio
+async def test_resumable_task_fails_once_attempts_run_out(tmp_path) -> None:
+    service = BackgroundTaskService(str(tmp_path / "agent.db"))
+    service.register(_Flaky(failures=9))
+    channel = _Capture()
+    service.bind(SimpleNamespace(channels={"teams": (channel, None)}))
+
+    task_id = await _create(service, "teams", "flaky", {})
+    failed = await service.get(task_id)
+    assert failed is not None and failed.status == "failed" and failed.attempts == 3
+    assert failed.error == "network down"
+    assert len(channel.messages) == 1 and "failed" in channel.messages[0]
+
+
+@pytest.mark.asyncio
+async def test_resume_honours_the_handler_max_attempts(tmp_path) -> None:
+    db = str(tmp_path / "agent.db")
+    store = BackgroundTaskService(db).store
+    origin = {"platform": "teams", "key": {"platform": "teams", "chat_id": "c1"}}
+    task = await store.insert(task_type="flaky", subject="a", params={}, origin=origin)
+    await store.mark_running(task.id)
+    await store.mark_running(task.id)
+
+    service = BackgroundTaskService(db)
+    service.register(_Flaky(failures=0))
+    service.bind(SimpleNamespace(channels={"teams": (_Capture(), None)}))
+    assert await service.resume() == [task.id]
+    await asyncio.wait(set(service._inflight))
+    done = await service.get(task.id)
+    assert done is not None and done.status == "done" and done.attempts == 3
+
+
 @pytest.mark.asyncio
 async def test_unknown_task_type_is_rejected(tmp_path) -> None:
     service = BackgroundTaskService(str(tmp_path / "agent.db"))

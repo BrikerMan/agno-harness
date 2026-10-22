@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.4
+
+### Changed
+
+- **Resumable background tasks retry after an error, not only after a restart.** A failing `run` of a `resumable` handler runs again after `retry_delay × attempts` seconds (default 30) while attempts remain, and only the last failure is posted. Handlers can set `max_attempts` (default 2, counting the first run); `resume()` honours it too. `run` sees `task.attempts`, so a handler can pick up work it saved on an earlier attempt.
+- Bump package version to `0.3.4`.
+
 ## 0.3.3
 
 ### Fixed

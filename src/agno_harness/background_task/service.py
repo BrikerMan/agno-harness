@@ -16,9 +16,19 @@ log = logging.getLogger("agno_harness.background_task")
 
 #: Channels whose ``send`` renders cards; others get the message text.
 CARD_PLATFORMS = frozenset({"teams", "lark"})
-#: Runs per task, counting the first. A resumable task interrupted more often is failed.
+#: Runs per task, counting the first, unless the handler sets ``max_attempts``.
 MAX_ATTEMPTS = 2
+#: Seconds before a failed resumable task runs again, times the attempts so far.
+RETRY_DELAY = 30.0
 INTERRUPTED = "Interrupted by a restart."
+
+
+def _max_attempts(handler: BackgroundHandler | None) -> int:
+    return int(getattr(handler, "max_attempts", MAX_ATTEMPTS))
+
+
+def _can_retry(handler: BackgroundHandler | None, task: TaskRecord) -> bool:
+    return bool(getattr(handler, "resumable", False)) and task.attempts < _max_attempts(handler)
 
 
 class BackgroundTaskService:
@@ -81,11 +91,7 @@ class BackgroundTaskService:
         restarted = []
         for task in await self.store.list_active():
             handler = self._handlers.get(task.task_type)
-            if (
-                handler is not None
-                and getattr(handler, "resumable", False)
-                and task.attempts < MAX_ATTEMPTS
-            ):
+            if handler is not None and _can_retry(handler, task):
                 log.info("resuming background task #%s (attempt %s)", task.id, task.attempts + 1)
                 self._spawn(task.id)
                 restarted.append(task.id)
@@ -109,16 +115,30 @@ class BackgroundTaskService:
         if handler is None:
             await self.store.mark_failed(task_id, f"No handler for {task.task_type}.")
             return
-        await self.store.mark_running(task_id)
-        try:
-            result = await handler.run(task)
-        except Exception as exc:
-            log.exception("background task #%s failed", task_id)
-            await self.store.mark_failed(task_id, str(exc))
-            await self._notify(
-                task_id, await self._failure_message(handler, task, str(exc)), ok=False
-            )
-            return
+        while True:
+            await self.store.mark_running(task_id)
+            task = await self.store.get(task_id) or task
+            try:
+                result = await handler.run(task)
+                break
+            except Exception as exc:
+                if _can_retry(handler, task):
+                    delay = getattr(handler, "retry_delay", RETRY_DELAY) * task.attempts
+                    log.exception(
+                        "background task #%s failed (attempt %s of %s), retrying in %ss",
+                        task_id,
+                        task.attempts,
+                        _max_attempts(handler),
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                log.exception("background task #%s failed", task_id)
+                await self.store.mark_failed(task_id, str(exc))
+                await self._notify(
+                    task_id, await self._failure_message(handler, task, str(exc)), ok=False
+                )
+                return
         message = result if isinstance(result, OutboundMessage) else OutboundMessage(text=result)
         await self.store.mark_done(task_id, message.text or message.raw_text)
         await self._notify(task_id, message, ok=True)

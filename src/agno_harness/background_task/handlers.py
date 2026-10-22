@@ -17,7 +17,10 @@ class BackgroundHandler(Protocol):
 
     Optional attributes, read with ``getattr``:
 
-    - ``resumable: bool``: after a restart, run an unfinished task again (once) instead of failing it.
+    - ``resumable: bool``: run the task again after a restart or an error instead of failing it, while
+      attempts remain. ``run`` sees ``task.attempts`` (1 on the first run) and should pick up saved work.
+    - ``max_attempts: int``: runs counting the first (default 2).
+    - ``retry_delay: float``: seconds before a retry after an error, times the attempts so far (default 30).
     - ``async def on_failure(task, error) -> OutboundMessage | str | None``: what to post when the
       task fails or a restart interrupts it. ``None`` posts the default failure text.
     """
