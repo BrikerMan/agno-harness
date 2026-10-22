@@ -1,4 +1,5 @@
 import asyncio
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ from agno_harness.background_task.handlers import SleepHandler
 from agno_harness.background_task.service import INTERRUPTED, BackgroundTaskService
 from agno_harness.background_task.toolkit import BackgroundTaskToolkit
 from agno_harness.core.channel import OutboundMessage
+from agno_harness.db import AgnoHarnessSqliteDb
 from agno_harness.sessions.models import ConversationKey
 
 
@@ -272,3 +274,58 @@ async def test_unknown_task_type_is_rejected(tmp_path) -> None:
     record, message = await service.create(task_type="missing", subject="nope", params={})
     assert record is None
     assert "Unknown task type" in message
+
+
+def test_task_table_follows_the_harness_prefix(tmp_path) -> None:
+    plain = BackgroundTaskService(str(tmp_path / "agent.db"))
+    assert plain.store is not None
+    assert plain.store._model.__tablename__ == "agno_harness_background_tasks"
+    named = BackgroundTaskService(
+        AgnoHarnessSqliteDb(db_file=tmp_path / "prefixed.db", prefix="moradin")
+    )
+    assert named.store is not None
+    assert named.store._model.__tablename__ == "agno_harness_background_tasks"
+    assert "background_tasks" not in named._harness.models
+
+
+def _store_targets(tmp_path):
+    targets = [("sqlite-file", str(tmp_path / "agent.db"))]
+    url = "sqlite+aiosqlite:///" + (tmp_path / "url.db").resolve().as_posix()
+    targets.append(("sqlite-url", url))
+    postgres = os.getenv("TEST_POSTGRES_URL")
+    if postgres:
+        targets.append(("postgres", postgres))
+    return targets
+
+
+@pytest.mark.asyncio
+async def test_store_roundtrip_on_sqlite_url_and_postgres(tmp_path) -> None:
+    if os.getenv("TEST_POSTGRES_URL"):
+        pytest.importorskip("asyncpg")
+    for name, target in _store_targets(tmp_path):
+        service = BackgroundTaskService(target)
+        store = service.store
+        assert store is not None
+        task = await store.insert(
+            task_type="hold",
+            subject=name,
+            params={"k": "值"},
+            origin={"platform": "teams", "key": {"chat_id": "c"}},
+        )
+        await store.mark_running(task.id)
+        await store.mark_done(task.id, "ok")
+        loaded = await store.get(task.id)
+        assert loaded is not None
+        assert loaded.status == "done" and loaded.result == "ok" and loaded.attempts == 1
+        assert loaded.params == {"k": "值"}
+        assert loaded.origin == {"platform": "teams", "key": {"chat_id": "c"}}
+        assert await store.list_active() == []
+        if name == "sqlite-file":
+            from sqlalchemy import inspect
+
+            engine = service._harness.engine
+            assert engine is not None
+            async with engine.connect() as conn:
+                names = await conn.run_sync(lambda sync: set(inspect(sync).get_table_names()))
+            assert "agno_harness_background_tasks" in names
+            assert "moradin_background_tasks" not in names

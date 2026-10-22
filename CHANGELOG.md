@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.5
+
+### Changed
+
+- **Background tasks use SQLite or Postgres.** `BackgroundTaskService` takes a filesystem path, a database URL, or an existing `AgnoHarnessDb`. The table is always `agno_harness_background_tasks`. It is not added to the app-prefixed harness tables (`moradin_threads` and the rest), and those tables are not modified.
+- Bump package version to `0.3.5`.
+
 ## 0.3.4
 
 ### Changed

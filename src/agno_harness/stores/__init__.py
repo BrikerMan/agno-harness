@@ -16,6 +16,7 @@ from .action_store import InMemoryActionStore, SQLAlchemyActionStore
 from .memory_log import InMemoryRunEventLog
 from .mixins import (
     ActionRecordMixin,
+    BackgroundTaskMixin,
     CustomEventMixin,
     MessageAuditMixin,
     RunArchiveMixin,
@@ -65,6 +66,7 @@ def __getattr__(name: str):
 
 __all__ = [
     "ActionRecordMixin",
+    "BackgroundTaskMixin",
     "BaseThreadStore",
     "CustomEventMixin",
     "CustomEventStore",

@@ -115,6 +115,7 @@ def test_alembic_migrator_declare_models():
     models = AlembicMigrator.declare_models(base=CustomBase, prefix="admin_agent")
     assert len(models) == 8
     assert "admin_agent_threads" in CustomBase.metadata.tables
+    assert "admin_agent_background_tasks" not in CustomBase.metadata.tables
     assert "admin_agent_conversation_sessions" in CustomBase.metadata.tables
     assert "admin_agent_run_frames" in CustomBase.metadata.tables
 

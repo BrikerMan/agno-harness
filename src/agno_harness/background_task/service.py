@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from ..core.channel import OutboundMessage
+from ..db.classes import AgnoHarnessDb, AgnoHarnessPostgresDb, AgnoHarnessSqliteDb
 from ..sessions.models import ConversationKey
 from .context import current_origin
 from .handlers import BackgroundHandler
@@ -31,14 +32,41 @@ def _can_retry(handler: BackgroundHandler | None, task: TaskRecord) -> bool:
     return bool(getattr(handler, "resumable", False)) and task.attempts < _max_attempts(handler)
 
 
-class BackgroundTaskService:
-    """Sqlite-backed tasks for one process. The row survives a restart; ``resume`` decides the run."""
+def _open_harness(target: str) -> AgnoHarnessDb:
+    """A filesystem path is a SQLite file. A URL is SQLite or Postgres."""
+    if "://" not in target:
+        return AgnoHarnessSqliteDb(db_file=target)
+    if target.startswith("sqlite"):
+        return AgnoHarnessSqliteDb(db_url=target)
+    return AgnoHarnessPostgresDb(db_url=target)
 
-    def __init__(self, db_path: str) -> None:
-        self.store = BackgroundTaskStore(db_path)
+
+class BackgroundTaskService:
+    """Tasks for one process. Rows live on the harness background-task table.
+
+    ``db`` is a filesystem path, a database URL, or an ``AgnoHarnessDb``.
+    Rows go to ``agno_harness_background_tasks``, not to an app-prefixed table.
+    The row survives a restart; ``resume`` decides the run.
+    """
+
+    def __init__(self, db: str | AgnoHarnessDb | None = None) -> None:
+        self._harness: AgnoHarnessDb | None = None
+        self.store: BackgroundTaskStore | None = None
         self._handlers: dict[str, BackgroundHandler] = {}
         self._relay: Any = None
         self._inflight: set[asyncio.Task[None]] = set()
+        if db is not None:
+            self.attach(db)
+
+    def attach(self, db: str | AgnoHarnessDb) -> None:
+        """Use this database connection. Task rows stay in ``agno_harness_background_tasks``."""
+        self._harness = db if isinstance(db, AgnoHarnessDb) else _open_harness(db)
+        self.store = BackgroundTaskStore(self._harness)
+
+    def _store(self) -> BackgroundTaskStore:
+        if self.store is None:
+            raise RuntimeError("BackgroundTaskService has no database. Call attach() first.")
+        return self.store
 
     def register(self, handler: BackgroundHandler) -> None:
         self._handlers[handler.task_type] = handler
@@ -56,10 +84,10 @@ class BackgroundTaskService:
         return "\n".join(lines)
 
     async def list_running(self) -> list[TaskRecord]:
-        return await self.store.list_active()
+        return await self._store().list_active()
 
     async def get(self, task_id: int) -> TaskRecord | None:
-        return await self.store.get(task_id)
+        return await self._store().get(task_id)
 
     async def create(
         self,
@@ -72,7 +100,7 @@ class BackgroundTaskService:
         if handler is None:
             known = ", ".join(sorted(self._handlers)) or "none"
             return None, f"Unknown task type {task_type!r}. Known types: {known}."
-        record = await self.store.insert(
+        record = await self._store().insert(
             task_type=task_type,
             subject=subject,
             params=params or {},
@@ -89,14 +117,14 @@ class BackgroundTaskService:
         handler is resumable and attempts remain; the rest are failed and their chat is told.
         Returns the ids that run again."""
         restarted = []
-        for task in await self.store.list_active():
+        for task in await self._store().list_active():
             handler = self._handlers.get(task.task_type)
             if handler is not None and _can_retry(handler, task):
                 log.info("resuming background task #%s (attempt %s)", task.id, task.attempts + 1)
                 self._spawn(task.id)
                 restarted.append(task.id)
                 continue
-            await self.store.mark_failed(task.id, INTERRUPTED)
+            await self._store().mark_failed(task.id, INTERRUPTED)
             await self._notify(
                 task.id, await self._failure_message(handler, task, INTERRUPTED), ok=False
             )
@@ -108,16 +136,16 @@ class BackgroundTaskService:
         running.add_done_callback(self._inflight.discard)
 
     async def _run(self, task_id: int) -> None:
-        task = await self.store.get(task_id)
+        task = await self._store().get(task_id)
         if task is None:
             return
         handler = self._handlers.get(task.task_type)
         if handler is None:
-            await self.store.mark_failed(task_id, f"No handler for {task.task_type}.")
+            await self._store().mark_failed(task_id, f"No handler for {task.task_type}.")
             return
         while True:
-            await self.store.mark_running(task_id)
-            task = await self.store.get(task_id) or task
+            await self._store().mark_running(task_id)
+            task = await self._store().get(task_id) or task
             try:
                 result = await handler.run(task)
                 break
@@ -134,13 +162,13 @@ class BackgroundTaskService:
                     await asyncio.sleep(delay)
                     continue
                 log.exception("background task #%s failed", task_id)
-                await self.store.mark_failed(task_id, str(exc))
+                await self._store().mark_failed(task_id, str(exc))
                 await self._notify(
                     task_id, await self._failure_message(handler, task, str(exc)), ok=False
                 )
                 return
         message = result if isinstance(result, OutboundMessage) else OutboundMessage(text=result)
-        await self.store.mark_done(task_id, message.text or message.raw_text)
+        await self._store().mark_done(task_id, message.text or message.raw_text)
         await self._notify(task_id, message, ok=True)
 
     async def _failure_message(
@@ -160,7 +188,7 @@ class BackgroundTaskService:
         return OutboundMessage(text=error)
 
     async def _notify(self, task_id: int, message: OutboundMessage, *, ok: bool) -> None:
-        task = await self.store.get(task_id)
+        task = await self._store().get(task_id)
         if task is None or self._relay is None or not task.origin:
             return
         platform = str(task.origin.get("platform") or "")

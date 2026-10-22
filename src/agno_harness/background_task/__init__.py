@@ -1,4 +1,4 @@
-"""Background tasks: one sqlite row, an asyncio run, a reply to the originating chat."""
+"""Background tasks: one database row, an asyncio run, a reply to the originating chat."""
 
 from .handlers import SleepHandler
 from .service import BackgroundTaskService

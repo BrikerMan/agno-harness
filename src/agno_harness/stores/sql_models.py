@@ -9,6 +9,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from .mixins import (
     ActionRecordMixin,
+    BackgroundTaskMixin,
     CustomEventMixin,
     MessageAuditMixin,
     RunArchiveMixin,
@@ -36,6 +37,17 @@ _HARNESS_MODELS: tuple[tuple[str, str, type[Any]], ...] = (
     ("run_records", "run-records", RunRecordMixin),
     ("run_archives", "run-archives", RunArchiveMixin),
 )
+
+#: Fixed name. Not prefixed with the app prefix, so it is never ``moradin_background_tasks``.
+BACKGROUND_TASKS_TABLE = prefixed_table("background-tasks")
+
+
+def register_background_task_model(base: Any | None = None) -> type[Any]:
+    """The background-task table, always ``agno_harness_background_tasks``.
+
+    It is not one of the app-prefixed harness tables (``moradin_threads`` and the rest).
+    """
+    return _declare("background_tasks", BackgroundTaskMixin, BACKGROUND_TASKS_TABLE, base)
 
 
 def _declare(kind: str, mixin: type[Any], name: str, base: Any | None) -> type[Any]:
@@ -184,5 +196,6 @@ __all__ = [
     "harness_metadata",
     "include_harness",
     "numbered_revisions",
+    "register_background_task_model",
     "register_harness_models",
 ]

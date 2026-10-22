@@ -78,7 +78,7 @@ class AgnoHarnessDb:
 
     @property
     def table_names(self) -> list[str]:
-        """Names of the 7 persistence tables for this harness db prefix."""
+        """Names of the harness tables for this prefix."""
         return [model.__tablename__ for model in self.models.values()]
 
     async def ensure_tables(self) -> None:
@@ -133,6 +133,7 @@ class AgnoHarnessDb:
                     sync_conn, tables=tables_to_create
                 )
             )
+            await conn.commit()
 
         self._tables_ensured = True
 

@@ -153,6 +153,7 @@ from .skills import (
 from .stores import (
     DEFAULT_TABLE_PREFIX,
     ActionRecordMixin,
+    BackgroundTaskMixin,
     BaseThreadStore,
     CustomEventMixin,
     CustomEventStore,
@@ -206,7 +207,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.3.3"
+__version__ = "0.3.5"
 
 
 def __getattr__(name: str) -> Any:
@@ -236,6 +237,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "ActionRecordMixin",
+    "BackgroundTaskMixin",
     "CjkKeywordScorer",
     "EVENT_BLOCK_END",
     "EVENT_BLOCK_START",

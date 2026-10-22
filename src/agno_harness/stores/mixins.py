@@ -207,6 +207,25 @@ class ActionRecordMixin:
     )
 
 
+class BackgroundTaskMixin:
+    """One background task: what to run, where to post the result, and how many attempts it has had."""
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    params_json: Mapped[Any] = mapped_column(JSONVariant, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    origin_json: Mapped[Any | None] = mapped_column(JSONVariant, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
 class MessageAuditMixin:
     """Message audit log recording inbound and outbound messages across all channels."""
 
@@ -242,6 +261,7 @@ def record_to_dict(record: Any) -> dict[str, Any]:
 
 __all__ = [
     "ActionRecordMixin",
+    "BackgroundTaskMixin",
     "CustomEventMixin",
     "JSONVariant",
     "load_json",
