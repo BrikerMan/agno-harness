@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.3
+
+### Fixed
+
+- **Chat cards still fell back to the title-only card.** `MessageCollector` read the card name from a `name` key, but `StreamUIModule` sends it as `schema`, so no block or item was ever found in the catalog. It now reads `schema`, and item lines that omit it take the block's `itemSchema`. Collector tests now feed events in the shape the parser emits.
+
+### Changed
+
+- **FINAL-mode replies drop narration.** In `StreamMode.FINAL`, text written before a tool call ("Let me check…") is discarded and only the text after the last tool call is sent; cards are kept. Streaming modes are unchanged. Opt out with `RelayApp(keep_interim_text=True)` or `MessageCollector(keep_interim_text=True)`.
+- Bump package version to `0.3.3`.
+
 ## 0.3.2
 
 ### Fixed
