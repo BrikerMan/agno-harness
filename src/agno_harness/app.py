@@ -149,6 +149,7 @@ class RelayApp:
         enable_deduplication: bool = True,
         dedup_ttl_seconds: float = 300.0,
         action_handlers: Mapping[str, ActionHandler] | None = None,
+        keep_interim_text: bool = False,
     ) -> None:
         if not isinstance(runtime, AgentRuntime):
             raise TypeError(
@@ -159,6 +160,7 @@ class RelayApp:
             )
 
         self.runtime: AgentRuntime = runtime
+        self.keep_interim_text = keep_interim_text
         self.card_catalog = card_catalog or getattr(self.runtime, "catalog", None)
 
         h_db = getattr(runtime, "harness_db", None)
@@ -354,6 +356,7 @@ class RelayApp:
                     catalog=self.card_catalog,
                     session_id=session_id,
                     meta=payload.get("meta") or {},
+                    keep_interim_text=self._keeps_interim_text(channel),
                 )
                 ack_token = None
                 with contextlib.suppress(Exception):
@@ -595,6 +598,7 @@ class RelayApp:
                 catalog=self.card_catalog,
                 session_id=session_id,
                 meta=meta,
+                keep_interim_text=self._keeps_interim_text(channel),
             )
             run_input = RunAgentInput(
                 thread_id=session_id,
@@ -668,6 +672,13 @@ class RelayApp:
             reset_origin(origin_token)
             with contextlib.suppress(Exception):
                 await channel.typing(key, False)
+
+    def _keeps_interim_text(self, channel: BaseChannel) -> bool:
+        """A FINAL-mode reply is the answer only; streaming modes already showed the narration."""
+        if self.keep_interim_text:
+            return True
+        mode = self.channels.get(channel.name, (channel, self.default_stream_mode))[1]
+        return mode is not StreamMode.FINAL
 
     async def _drain_runtime_stream(
         self,

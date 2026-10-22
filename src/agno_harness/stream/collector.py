@@ -142,11 +142,14 @@ class MessageCollector:
         catalog: CardCatalog | None = None,
         session_id: str | None = None,
         meta: dict[str, Any] | None = None,
+        keep_interim_text: bool = False,
     ) -> None:
         self.platform = platform
         self.catalog = catalog
         self.session_id = session_id
         self.meta = meta or {}
+        # Text written before a tool call ("Let me check...") is narration, not the reply.
+        self.keep_interim_text = keep_interim_text
         self.text_chunks: list[str] = []
         self.current_block: dict[str, Any] | None = None
         self.rendered_items: list[Any] = []
@@ -156,6 +159,11 @@ class MessageCollector:
     def feed(self, event: Any) -> None:
         """Feed a single AG-UI event into the collector."""
         event_type = getattr(event, "type", None)
+
+        if event_type is EventType.TOOL_CALL_START:
+            if not self.keep_interim_text:
+                self.text_chunks.clear()
+            return
 
         if event_type is EventType.TEXT_MESSAGE_CONTENT or getattr(event_type, "name", "") in (
             "TEXT_DELTA",
@@ -173,9 +181,11 @@ class MessageCollector:
                 self.paused_descriptors.append(value)
 
             elif name == "ui.block.start":
+                # StreamUIModule names the card in ``schema``.
                 self.current_block = {
-                    "name": value.get("name", ""),
+                    "name": value.get("schema") or "",
                     "props": value.get("props", {}),
+                    "item_schema": value.get("itemSchema") or "",
                 }
                 self.rendered_items = []
 
@@ -185,7 +195,10 @@ class MessageCollector:
                     self.current_block["text"] = self.current_block.get("text", "") + delta
 
             elif name == "ui.item":
-                item_name = value.get("name", "")
+                # Lines of a homogeneous block omit ``schema``; the block's ``itemSchema`` names them.
+                item_name = value.get("schema") or (
+                    (self.current_block or {}).get("item_schema") or ""
+                )
                 data = value.get("data", {})
                 resolved = value.get("resolved")
 

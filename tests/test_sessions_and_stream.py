@@ -115,17 +115,18 @@ async def test_message_collector_aggregates_items_into_single_card():
     collector.feed(
         CustomEvent(
             name="ui.block.start",
-            value={"name": "test-movie-list", "props": {"title": "Top Sci-Fi"}},
+            value={"schema": "test-movie-list", "props": {"title": "Top Sci-Fi"}},
         )
     )
     collector.feed(
         CustomEvent(
-            name="ui.item", value={"name": "test-movie", "data": {"id": 1, "title": "Inception"}}
+            name="ui.item", value={"schema": "test-movie", "data": {"id": 1, "title": "Inception"}}
         )
     )
     collector.feed(
         CustomEvent(
-            name="ui.item", value={"name": "test-movie", "data": {"id": 2, "title": "Interstellar"}}
+            name="ui.item",
+            value={"schema": "test-movie", "data": {"id": 2, "title": "Interstellar"}},
         )
     )
     collector.feed(
@@ -134,7 +135,7 @@ async def test_message_collector_aggregates_items_into_single_card():
             delta='{"id": 1, "title": "Inception"}\n{"id": 2, "title": "Interstellar"}\n```\n',
         )
     )
-    collector.feed(CustomEvent(name="ui.block.end", value={"name": "test-movie-list"}))
+    collector.feed(CustomEvent(name="ui.block.end", value={"schema": "test-movie-list"}))
     collector.feed(TextMessageContentEvent(message_id="m1", delta="Hope you enjoy them!"))
 
     outbound = collector.finalize()
@@ -153,6 +154,75 @@ async def test_message_collector_aggregates_items_into_single_card():
     assert card["body"][2] == {"type": "TextBlock", "text": "Teams: Interstellar"}
 
 
+class ConfirmCard(BlockSchema):
+    schema_name = "draft_confirm"
+    body = "items"
+
+    article_id: int
+    title: str
+    angle: str
+
+    def render_teams_block(self, rendered_items: list) -> dict:
+        return {
+            "type": "AdaptiveCard",
+            "body": [{"type": "TextBlock", "text": self.title}],
+            "actions": [{"type": "Action.Submit", "title": "Start writing"}],
+        }
+
+
+def test_collector_uses_custom_renderer_for_parser_events():
+    """Events as the parser emits them reach the block's own Teams renderer."""
+    from agno_harness.core.streamui.parser import StreamUIFenceParser
+
+    catalog = CardCatalog([ConfirmCard, DummyMovieListBlock])
+    answer = (
+        "<stream-ui>\n"
+        '{"schema": "draft_confirm", "article_id": 1, "title": "Hasbro Summit", "angle": "Recap"}\n'
+        "</stream-ui>\n\n"
+        "<stream-ui>\n"
+        '{"schema": "test-movie-list", "title": "Top Sci-Fi"}\n'
+        '{"id": 1, "title": "Inception"}\n'
+        "</stream-ui>\n\n"
+        'Tap **Start writing**, or reply "start".'
+    )
+    parser = StreamUIFenceParser(catalog)
+    text, events = parser.feed(answer)
+    rest, tail = parser.flush()
+
+    collector = MessageCollector(platform="teams", catalog=catalog)
+    collector.feed(TextMessageContentEvent(message_id="m1", delta=text + rest))
+    for ev in [*events, *tail]:
+        collector.feed(CustomEvent(name=ev.kind, value=dict(ev.payload)))
+    cards = collector.finalize().cards
+
+    assert cards[0]["body"] == [{"type": "TextBlock", "text": "Hasbro Summit"}]
+    assert cards[0]["actions"][0]["title"] == "Start writing"
+    assert cards[1]["body"][1] == {"type": "TextBlock", "text": "Teams: Inception"}
+
+
+def _narrated_turn(collector: MessageCollector) -> str:
+    from ag_ui.core import ToolCallStartEvent
+
+    collector.feed(
+        TextMessageContentEvent(
+            message_id="m1", delta="Article #1 created. Let me gather facts.\n\n"
+        )
+    )
+    collector.feed(
+        ToolCallStartEvent(
+            tool_call_id="t1", tool_call_name="run_yodo1_cli", parent_message_id="m1"
+        )
+    )
+    collector.feed(TextMessageContentEvent(message_id="m2", delta="The summit was on October 20."))
+    return collector.finalize().text
+
+
+def test_final_reply_drops_text_written_before_a_tool_call():
+    assert _narrated_turn(MessageCollector(platform="teams")) == "The summit was on October 20."
+    kept = _narrated_turn(MessageCollector(platform="teams", keep_interim_text=True))
+    assert "Let me gather facts" in kept and "October 20" in kept
+
+
 class NoteBlock(BlockSchema):
     schema_name = "note"
     body = "text"
@@ -163,10 +233,10 @@ async def test_text_body_lands_inside_the_teams_card():
     catalog = CardCatalog([NoteBlock])
     collector = MessageCollector(platform="teams", catalog=catalog)
     collector.feed(
-        CustomEvent(name="ui.block.start", value={"name": "note", "props": {"title": "记录"}})
+        CustomEvent(name="ui.block.start", value={"schema": "note", "props": {"title": "记录"}})
     )
     collector.feed(CustomEvent(name="ui.text", value={"delta": "您在格鲁吉亚出差。"}))
-    collector.feed(CustomEvent(name="ui.block.end", value={"name": "note"}))
+    collector.feed(CustomEvent(name="ui.block.end", value={"schema": "note"}))
 
     card = collector.finalize().cards[0]
     assert card["type"] == "AdaptiveCard"
@@ -204,9 +274,9 @@ class StyledEvent(BlockSchema):
 
 
 def _feed_text(collector: MessageCollector, name: str, text: str) -> dict:
-    collector.feed(CustomEvent(name="ui.block.start", value={"name": name, "props": {}}))
+    collector.feed(CustomEvent(name="ui.block.start", value={"schema": name, "props": {}}))
     collector.feed(CustomEvent(name="ui.text", value={"delta": text}))
-    collector.feed(CustomEvent(name="ui.block.end", value={"name": name}))
+    collector.feed(CustomEvent(name="ui.block.end", value={"schema": name}))
     return collector.finalize().cards[-1]
 
 
