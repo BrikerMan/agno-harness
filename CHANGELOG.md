@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2
+
+### Fixed
+
+- **Custom card renderers never ran for model-emitted cards.** The parser passes block props and item data with their `schema` routing key, which every schema model rejects as an extra field, so `render_teams_block` / `render_{platform}` were skipped silently and the generic title-only card was sent. The key is now dropped before validation, and a validation failure logs a warning before falling back.
+- **Message audit rows failed for Teams personal chats.** Their conversation ids exceed 128 characters. `chat_id`, `thread_id` and `sender_id` on the message audit table are now `String(512)`; apps that manage harness tables with alembic need a revision (`ALTER COLUMN ... TYPE VARCHAR(512)`).
+
+### Changed
+
+- Bump package version to `0.3.2`.
+
 ## 0.3.1
 
 ### Added
