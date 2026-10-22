@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1
+
+### Added
+
+- **Background task results can be cards.** A handler's `run` may return an `OutboundMessage`: its cards go to Teams and Lark, its text to other channels and into the task row. Plain `str` results behave as before.
+- Optional handler hook `on_failure(task, error)` returns the message posted when a task fails or a restart interrupts it.
+- **`BackgroundTaskService.resume()`**: call once at startup after `bind`. Unfinished tasks of a handler with `resumable = True` run again (at most 2 runs in total); other unfinished tasks are failed with "Interrupted by a restart." and their chat is told. The task row gains an `attempts` column, added in place on existing databases.
+- **Teams turn reactions.** `ack` puts 🤔 (`think`) on the inbound message, and `settle` removes it and adds ✅ when the turn succeeds. Reaction failures are logged and never fail the turn. `TeamsConnectorClient` gains `put_reaction` / `delete_reaction`.
+
+### Changed
+
+- Bump package version to `0.3.1`.
+
 ## 0.3.0
 
 Requires **Agno v3** (`agno>=3.0.10`). Agno v2 is no longer supported.
