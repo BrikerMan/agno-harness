@@ -103,6 +103,34 @@ async def test_class_first_resolver_and_custom_renderers():
     assert len(teams_block["body"]) == 2
 
 
+class ConfirmBlock(BlockSchema):
+    schema_name = "draft_confirm"
+    body = "items"
+
+    article_id: int
+    title: str
+
+    def render_teams_block(self, rendered_items):
+        return {
+            "type": "AdaptiveCard",
+            "body": [{"type": "TextBlock", "text": f"Custom {self.title}"}],
+        }
+
+
+def test_custom_renderers_accept_the_schema_routing_key():
+    """The parser hands props and item data over with their ``schema`` key still in them."""
+    catalog = CardCatalog([ConfirmBlock, CustomMovieListBlock])
+
+    props = {"schema": "draft_confirm", "article_id": 1, "title": "Hasbro Summit"}
+    block = catalog.render_block("teams", "draft_confirm", props, [])
+    assert block["body"][0]["text"] == "Custom Hasbro Summit"
+
+    item = catalog.render_item(
+        "teams", "custom-movie", {"schema": "custom-movie", "id": 7}, {"title": "Dune"}
+    )
+    assert item["items"][0]["text"] == "Custom Teams: Dune"
+
+
 def test_class_first_auto_fallback_teams_and_lark():
     catalog = CardCatalog([FallbackMovieListBlock])
 

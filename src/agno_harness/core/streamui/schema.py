@@ -21,9 +21,9 @@ second. A poster URL cannot be hallucinated if the model never writes one.
 
 from __future__ import annotations
 
-import contextlib
 import inspect
 import json
+import logging
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal, cast, get_args, get_origin
@@ -31,12 +31,19 @@ from urllib.parse import urlparse
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, ValidationError, ValidationInfo
 
+log = logging.getLogger("agno_harness.streamui")
+
 BodyMode = Literal["items", "text"]
 
 Resolver = Callable[[Any], Awaitable[Mapping[str, Any] | None]]
 OnCompleteHandler = Callable[
     [Any, Any], Awaitable[Mapping[str, Any] | None] | Mapping[str, Any] | None
 ]
+
+
+def _without_schema_key(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Drop the ``schema`` routing key; schema models forbid extra fields."""
+    return {k: v for k, v in data.items() if k != "schema"}
 
 
 def _validate_media_url(value: str, info: ValidationInfo) -> str:
@@ -575,10 +582,13 @@ class CardCatalog:
 
         instance = None
         if model is not None and isinstance(data, dict):
-            with contextlib.suppress(Exception):
+            try:
                 instance = model.model_validate(
-                    data, context={"allowed_media_domains": self.allowed_media_domains}
+                    _without_schema_key(data),
+                    context={"allowed_media_domains": self.allowed_media_domains},
                 )
+            except ValidationError as exc:
+                log.warning("Card item %s failed validation, using fallback: %s", schema_name, exc)
 
         method_name = f"render_{platform}"
         if instance is not None and hasattr(instance, method_name):
@@ -600,8 +610,10 @@ class CardCatalog:
         schema = self._blocks.get(block_name)
         instance = None
         if schema is not None and isinstance(props, dict):
-            with contextlib.suppress(Exception):
-                instance = schema.props_model().model_validate(props)
+            try:
+                instance = schema.props_model().model_validate(_without_schema_key(props))
+            except ValidationError as exc:
+                log.warning("Card block %s failed validation, using fallback: %s", block_name, exc)
 
         method_name = f"render_{platform}_block"
         if instance is not None and hasattr(instance, method_name):
