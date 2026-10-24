@@ -592,6 +592,25 @@ class RelayApp:
                 except Exception as exc:
                     log.warning(f"Error in attachment_processor: {exc}")
 
+            # Fallback when no processor or processor returned empty:
+            # ensure agent is aware of attached files (names and status)
+            if not meta.get("attachments_text") and event.attachments:
+                doc_lines = []
+                for att in event.attachments:
+                    if att.is_image:
+                        continue
+                    name = att.name or "file"
+                    if att.data:
+                        doc_lines.append(f"• {name} (file attached, {len(att.data)} bytes)")
+                    else:
+                        doc_lines.append(
+                            f"• {name} (file is attached; content could not be read or permission required)"
+                        )
+                if doc_lines:
+                    summary = "Attached documents:\n" + "\n".join(doc_lines)
+                    meta["attachments_text"] = summary
+                    context_items.append({"description": "Attached documents", "value": summary})
+
             # 8. Execute Agent reasoning and stream UI events
             collector = MessageCollector(
                 platform=channel.name,

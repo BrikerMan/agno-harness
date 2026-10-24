@@ -3,13 +3,13 @@ import json
 import logging
 from typing import Any
 
-from ..config import RelayConfig
-from ..core.attachment import InboundAttachment
-from ..core.channel import ChannelEvent, OutboundMessage
-from ..core.prompt import parse_sent_at
-from ..sessions.models import ConversationKey
-from .base import BaseChannel
-from .cleaning import clean_lark_mentions, html_to_markdown, lark_post_to_markdown, looks_like_html
+from ...config import RelayConfig
+from ...core.attachment import InboundAttachment
+from ...core.channel import ChannelEvent, OutboundMessage
+from ...core.prompt import parse_sent_at
+from ...sessions.models import ConversationKey
+from ..base import BaseChannel
+from ..cleaning import clean_lark_mentions, html_to_markdown, lark_post_to_markdown, looks_like_html
 
 log = logging.getLogger("agno_harness.channels.lark")
 

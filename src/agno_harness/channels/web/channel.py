@@ -1,9 +1,9 @@
 from typing import Any
 
-from ..api_paths import CHANNELS_PATH
-from ..core.channel import OutboundMessage
-from ..sessions.models import ConversationKey
-from .base import BaseChannel
+from ...api_paths import CHANNELS_PATH
+from ...core.channel import OutboundMessage
+from ...sessions.models import ConversationKey
+from ..base import BaseChannel
 
 #: Chat API for the web channel. Same shape as the Teams webhook path.
 WEB_AGUI_PATH = f"{CHANNELS_PATH}/web/agui"
@@ -24,7 +24,7 @@ class WebChannel(BaseChannel):
         if rt is None:
             raise ValueError("AgentRuntime must be provided to WebChannel to build the router.")
         if self._router is None:
-            from ..transport.router import make_agui_router
+            from ...transport.router import make_agui_router
 
             self._router = make_agui_router(rt)
         return self._router

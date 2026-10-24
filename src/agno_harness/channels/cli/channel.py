@@ -12,9 +12,9 @@ from rich.status import Status
 from rich.syntax import Syntax
 from rich.text import Text
 
-from ..core.channel import ChannelEvent, OutboundMessage
-from ..sessions.models import ConversationKey
-from .base import BaseChannel
+from ...core.channel import ChannelEvent, OutboundMessage
+from ...sessions.models import ConversationKey
+from ..base import BaseChannel
 
 
 class CLIChannel(BaseChannel):

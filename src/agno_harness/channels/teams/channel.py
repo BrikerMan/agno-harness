@@ -10,17 +10,17 @@ raise; they never return a fake activity id.
 import logging
 from typing import Any, Protocol, runtime_checkable
 
-from ..api_paths import CHANNELS_PATH
-from ..config import RelayConfig
-from ..core.attachment import InboundAttachment
-from ..core.channel import ChannelEvent, OutboundMessage
-from ..core.chimein import ChimeInPolicy, MentionOnlyPolicy
-from ..core.prompt import parse_sent_at
-from ..sessions.models import ConversationKey
-from .base import BaseChannel
-from .cleaning import teams_html_to_markdown
-from .teams_auth import TeamsJwtVerifier
-from .teams_connector import (
+from ...api_paths import CHANNELS_PATH
+from ...config import RelayConfig
+from ...core.attachment import InboundAttachment
+from ...core.channel import ChannelEvent, OutboundMessage
+from ...core.chimein import ChimeInPolicy, MentionOnlyPolicy
+from ...core.prompt import parse_sent_at
+from ...sessions.models import ConversationKey
+from ..base import BaseChannel
+from ..cleaning import teams_html_to_markdown
+from .auth import TeamsJwtVerifier
+from .connector import (
     TeamsAuthError,
     TeamsChannelError,
     TeamsConnectorClient,
@@ -31,6 +31,7 @@ from .teams_connector import (
     TeamsServiceUrlError,
     validate_service_url,
 )
+from .graph import TeamsGraphClient, extract_html_file_attachments
 
 log = logging.getLogger("agno_harness.channels.teams")
 
@@ -313,6 +314,12 @@ class TeamsChannel(BaseChannel):
             connector=connector,
             verifier=verifier if verifier is not None else TeamsJwtVerifier(self.bot_app_id),
         )
+        self.graph = TeamsGraphClient(
+            self.bot_app_id,
+            self.bot_app_password,
+            self.tenant_id,
+            http=connector._http if connector else None,
+        )
         if chime_in_policy is _DEFAULT_POLICY:
             self.chime_in_policy: ChimeInPolicy | None = MentionOnlyPolicy()
         else:
@@ -391,8 +398,54 @@ class TeamsChannel(BaseChannel):
 
         self.bot.remember(activity_data)
         event = self._event_from_activity(activity_data)
+        await self._enrich_event_attachments(event, activity_data)
         await self.push_event(event)
         return "invoke" if activity_type == "invoke" else "message"
+
+    async def _enrich_event_attachments(
+        self, event: ChannelEvent, activity_data: dict[str, Any]
+    ) -> None:
+        """Enrich event with document attachments extracted from HTML or Microsoft Graph."""
+        existing_urls = {a.url for a in event.attachments if a.url}
+        existing_names = {a.name for a in event.attachments if a.name}
+
+        # 1. HTML sources: activity.text and any text/html attachment bodies
+        html_sources: list[str] = []
+        raw_text = activity_data.get("text")
+        if isinstance(raw_text, str) and raw_text:
+            html_sources.append(raw_text)
+        for att in activity_data.get("attachments") or []:
+            if isinstance(att, dict) and str(att.get("contentType") or "").lower() == "text/html":
+                content = att.get("content")
+                if isinstance(content, str) and content:
+                    html_sources.append(content)
+
+        for html in html_sources:
+            for item in extract_html_file_attachments(html):
+                if item.url and item.url not in existing_urls:
+                    existing_urls.add(item.url)
+                    event.attachments.append(item)
+
+        # 2. Microsoft Graph reference attachments query
+        try:
+            graph_atts = await self.graph.fetch_message_attachments(activity_data)
+            for item in graph_atts:
+                if (item.url and item.url not in existing_urls) or (
+                    item.name and item.name not in existing_names
+                ):
+                    if item.url:
+                        existing_urls.add(item.url)
+                    if item.name:
+                        existing_names.add(item.name)
+                    event.attachments.append(item)
+        except Exception as exc:
+            log.warning("Failed to enrich attachments from Graph: %s", exc)
+
+        # 3. If cleaned_text was empty or whitespace, but attachments exist:
+        if not event.text.strip() and event.attachments:
+            att_names = [a.name for a in event.attachments if a.name]
+            if att_names:
+                event.text = f"[附件: {', '.join(att_names)}]"
 
     def _event_from_activity(self, activity_data: dict[str, Any]) -> ChannelEvent:
         conversation = activity_data.get("conversation") or {}
@@ -459,6 +512,16 @@ class TeamsChannel(BaseChannel):
             raw=activity_data,
         )
 
+    async def fetch_attachment(
+        self, event: ChannelEvent, attachment: InboundAttachment
+    ) -> bytes | None:
+        """Download document bytes for an inbound attachment."""
+        if attachment.data is not None:
+            return attachment.data
+        if not attachment.url:
+            return None
+        return await self.graph.download_share(attachment.url)
+
     async def start(self) -> None:
         self.require_credentials()
         await super().start()
@@ -466,6 +529,7 @@ class TeamsChannel(BaseChannel):
     async def stop(self) -> None:
         await super().stop()
         await self.bot.aclose()
+        await self.graph.aclose()
 
     async def ack(self, event: ChannelEvent, emoji: str = "👀") -> Any:
         """Show 🤔 on the inbound message, then a typing activity.
