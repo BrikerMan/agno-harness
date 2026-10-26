@@ -12,6 +12,7 @@ applications to plug in keyword filters, LLM intent triagers, or topic classifie
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
@@ -34,41 +35,71 @@ class MentionOnlyPolicy:
 
     Always responds to direct 1-on-1 messages.
     In group chats or channel threads, only responds if:
-    1. The bot is explicitly mentioned (<at> tag or mention entity); OR
+    1. The bot is explicitly mentioned (<at> tag, mention entity, or @name); OR
     2. The message is a direct reply to one of the bot's prior messages.
     """
 
-    def __init__(self, bot_names: Sequence[str] | None = None) -> None:
+    def __init__(
+        self,
+        bot_names: Sequence[str] | None = None,
+        bot_ids: Sequence[str] | None = None,
+    ) -> None:
         self.bot_names = [n.lower() for n in (bot_names or [])]
+        self.bot_ids = [str(i).lower() for i in (bot_ids or [])]
 
     async def should_chime_in(self, event: ChannelEvent) -> bool:
         # 1. 1-on-1 direct message: always respond
         if event.key.is_direct_message:
             return True
 
-        # 2. Check for mention tag in cleaned Markdown text
-        text = event.text or ""
-        raw_text = event.raw_text or ""
+        # Extract bot candidate IDs and names
+        target_ids = {b.removeprefix("28:").strip() for b in self.bot_ids if b and b.strip()}
+        target_names = {n.strip() for n in self.bot_names if n and n.strip()}
 
-        # If any <at> tag exists and bot_names is not restricted, treat as mention
-        if "<at>" in text or "<at>" in raw_text or "@" in text:
-            if not self.bot_names:
-                return True
-            # If specific bot names given, check if any is inside the mention
-            for name in self.bot_names:
-                if f"<at>{name}</at>" in text.lower() or f"@{name}" in text.lower():
-                    return True
+        # In Teams Bot Framework, event.raw['recipient'] is the receiving bot
+        if isinstance(event.raw, dict):
+            recipient = event.raw.get("recipient")
+            if isinstance(recipient, dict):
+                r_id = str(recipient.get("id") or "").lower().removeprefix("28:").strip()
+                if r_id:
+                    target_ids.add(r_id)
+                r_name = str(recipient.get("name") or "").lower().strip()
+                if r_name:
+                    target_names.add(r_name)
+                r_aad = str(recipient.get("aadObjectId") or "").lower().strip()
+                if r_aad:
+                    target_ids.add(r_aad)
 
-        # 3. Check raw entities for Teams
+        # 2. Check raw entities for Teams / platform mentions
         if isinstance(event.raw, dict):
             entities = event.raw.get("entities", [])
             for e in entities:
                 if isinstance(e, dict) and e.get("type") == "mention":
-                    if not self.bot_names:
-                        return True
-                    mentioned_name = ((e.get("mentioned") or {}).get("name") or "").lower()
-                    if any(name in mentioned_name for name in self.bot_names):
-                        return True
+                    mentioned = e.get("mentioned") or {}
+                    if isinstance(mentioned, dict):
+                        m_id = str(mentioned.get("id") or "").lower().removeprefix("28:").strip()
+                        m_aad = str(mentioned.get("aadObjectId") or "").lower().strip()
+                        m_name = str(mentioned.get("name") or "").lower().strip()
+
+                        if target_ids and (m_id in target_ids or (m_aad and m_aad in target_ids)):
+                            return True
+                        if target_names and m_name in target_names:
+                            return True
+
+        # 3. Check for mention tag in cleaned Markdown text or raw_text
+        text = event.text or ""
+        raw_text = event.raw_text or ""
+        search_space = f"{text} {raw_text}".lower()
+
+        for name in target_names:
+            if not name:
+                continue
+            if (
+                f"<at>{name}</at>" in search_space
+                or f"@{name}" in search_space
+                or re.search(rf"<at[^>]*>\s*{re.escape(name)}\s*</at>", search_space)
+            ):
+                return True
 
         # Default in group chats: remain silent (least privilege)
         return False

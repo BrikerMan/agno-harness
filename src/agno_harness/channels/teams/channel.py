@@ -321,7 +321,8 @@ class TeamsChannel(BaseChannel):
             http=connector._http if connector else None,
         )
         if chime_in_policy is _DEFAULT_POLICY:
-            self.chime_in_policy: ChimeInPolicy | None = MentionOnlyPolicy()
+            bot_ids = [self.bot_app_id] if self.bot_app_id else []
+            self.chime_in_policy: ChimeInPolicy | None = MentionOnlyPolicy(bot_ids=bot_ids)
         else:
             self.chime_in_policy = chime_in_policy
         self._router: Any = None

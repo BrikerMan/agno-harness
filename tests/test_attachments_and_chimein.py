@@ -133,6 +133,88 @@ async def test_chime_in_least_privilege_policy():
     res3 = await app.handle_event(channel, dm_event)
     assert res3 is not None
 
+    # 4. Group chat mentioning someone ELSE -> Suppressed silently
+    other_mention_event = ChannelEvent(
+        event_id="evt-group-other",
+        key=group_key,
+        text="<at>Alice</at> can you review the PR?",
+    )
+    res4 = await app.handle_event(channel, other_mention_event)
+    assert res4 is None
+
+    # 5. Group chat with email address (@ in text) -> Suppressed silently
+    email_event = ChannelEvent(
+        event_id="evt-group-email",
+        key=group_key,
+        text="Contact support@example.com for help",
+    )
+    res5 = await app.handle_event(channel, email_event)
+    assert res5 is None
+
+
+@pytest.mark.asyncio
+async def test_teams_mention_policy_with_activity_entities_and_recipient():
+    policy = MentionOnlyPolicy(bot_ids=["bot-app-id-123"], bot_names=["moradin"])
+    group_key = ConversationKey(
+        platform="teams", chat_id="19:group-chat@thread.v2", is_direct_message=False
+    )
+
+    # 1. Mentioning another person or another bot -> Suppressed
+    event_other = ChannelEvent(
+        event_id="evt-teams-other",
+        key=group_key,
+        text="<at>Ivy</at> please check this",
+        raw={
+            "type": "message",
+            "recipient": {"id": "28:bot-app-id-123", "name": "Moradin"},
+            "entities": [
+                {
+                    "type": "mention",
+                    "mentioned": {"id": "28:other-ivy-id", "name": "Ivy"},
+                    "text": "<at>Ivy</at>",
+                }
+            ],
+        },
+    )
+    assert await policy.should_chime_in(event_other) is False
+
+    # 2. Mentioning the bot by recipient ID -> Responds
+    event_bot_id = ChannelEvent(
+        event_id="evt-teams-bot",
+        key=group_key,
+        text="<at>Moradin</at> summarize report",
+        raw={
+            "type": "message",
+            "recipient": {"id": "28:bot-app-id-123", "name": "Moradin"},
+            "entities": [
+                {
+                    "type": "mention",
+                    "mentioned": {"id": "28:bot-app-id-123", "name": "Moradin"},
+                    "text": "<at>Moradin</at>",
+                }
+            ],
+        },
+    )
+    assert await policy.should_chime_in(event_bot_id) is True
+
+    # 3. Mentioning the bot by text @moradin without entity -> Responds
+    event_bot_text = ChannelEvent(
+        event_id="evt-teams-text",
+        key=group_key,
+        text="@moradin generate article",
+        raw={
+            "type": "message",
+            "recipient": {"id": "28:bot-app-id-123", "name": "Moradin"},
+            "entities": [],
+        },
+    )
+    assert await policy.should_chime_in(event_bot_text) is True
+
+    # 4. Zero-arg policy in Teams: learns bot identity from activity recipient
+    default_policy = MentionOnlyPolicy()
+    assert await default_policy.should_chime_in(event_other) is False
+    assert await default_policy.should_chime_in(event_bot_id) is True
+
 
 @pytest.mark.asyncio
 async def test_dual_raw_and_parsed_storage_in_sql_sink():
