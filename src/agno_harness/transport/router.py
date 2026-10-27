@@ -38,6 +38,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
 from enum import Enum
@@ -363,6 +364,24 @@ def _resume_mode(runtime: AgentRuntime, long_runs: LongRunManager | None) -> Res
     return ResumeMode.LIVE if long_runs.can_follow_live else ResumeMode.HISTORY
 
 
+_LINE_SEP_EXPR = re.compile(r"\r\n|\r|\n")
+
+
+def _format_sse_frame(*, event_id: str | None = None, data_str: str) -> str:
+    """Format an SSE frame strictly adhering to WHATWG Server-Sent Events standard.
+
+    Every line of multi-line data is guaranteed to have a 'data: ' prefix,
+    preventing clients from truncating continuation lines or dropping payloads.
+    """
+    lines = _LINE_SEP_EXPR.split(data_str)
+    buffer: list[str] = []
+    if event_id is not None:
+        buffer.append(f"id: {event_id}")
+    for line in lines:
+        buffer.append(f"data: {line}")
+    return "\n".join(buffer) + "\n\n"
+
+
 async def _encode(
     runtime: AgentRuntime,
     run_input: RunAgentInput,
@@ -379,15 +398,24 @@ async def _encode(
             if tap is not None:
                 tap.observe(event)
             seq += 1
-            data = encoder.encode(event)
-            yield f"id: {now_ms}-{seq}\n{data}"
+            json_str = (
+                event.model_dump_json(by_alias=True)
+                if hasattr(event, "model_dump_json")
+                else json.dumps(event, ensure_ascii=False)
+            )
+            yield _format_sse_frame(event_id=f"{now_ms}-{seq}", data_str=json_str)
         if tap is not None:
             # After RUN_FINISHED on purpose: a debug frame must never be mistaken for
             # part of the run, and clients that ignore unknown CUSTOM names see
             # exactly the stream they would have got without ?debug=1.
             seq += 1
-            data = encoder.encode(tap.summary_event(runtime.last_violations()))
-            yield f"id: {now_ms}-{seq}\n{data}"
+            summary_ev = tap.summary_event(runtime.last_violations())
+            json_str = (
+                summary_ev.model_dump_json(by_alias=True)
+                if hasattr(summary_ev, "model_dump_json")
+                else json.dumps(summary_ev, ensure_ascii=False)
+            )
+            yield _format_sse_frame(event_id=f"{now_ms}-{seq}", data_str=json_str)
 
     async for chunk in _with_sse_ping(_frames()):
         yield chunk
@@ -407,10 +435,8 @@ async def _attach(
             # Mid-stream is a poor place to learn this, but the alternative is
             # checking ownership twice; the frame carries the same information a
             # 404 would.
-            yield (
-                "data: "
-                + json.dumps({"type": "RUN_ERROR", "message": "run not found"}, ensure_ascii=False)
-                + "\n\n"
+            yield _format_sse_frame(
+                data_str=json.dumps({"type": "RUN_ERROR", "message": "run not found"}, ensure_ascii=False)
             )
 
     async for chunk in _with_sse_ping(_frames()):
@@ -482,7 +508,12 @@ def _sse(frame: Frame) -> str:
     browser's EventSource replays the last one it saw as ``Last-Event-ID``.
     Clients that only read ``data:`` lines are unaffected.
     """
-    return f"id: {frame.offset}\ndata: {json.dumps(frame.event, ensure_ascii=False)}\n\n"
+    json_str = (
+        json.dumps(frame.event, ensure_ascii=False)
+        if not isinstance(frame.event, str)
+        else frame.event
+    )
+    return _format_sse_frame(event_id=frame.offset, data_str=json_str)
 
 
 def _run_to_dict(record: Any) -> dict[str, Any]:

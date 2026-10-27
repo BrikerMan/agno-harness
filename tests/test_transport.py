@@ -506,3 +506,35 @@ class TestConfiguration:
 
 def _payload():
     return make_input().model_dump(by_alias=True, mode="json")
+
+
+class TestSSEMultiline:
+    def test_sse_multiline_payload_strictly_prefixed(self):
+        from agno_harness.core.log import Frame
+        from agno_harness.transport.router import _format_sse_frame, _sse
+
+        # 1. Direct _format_sse_frame test with multi-line string
+        raw_json = '{\n  "type": "CUSTOM",\n  "name": "subagent.start",\n  "description": "line1\\nline2"\n}'
+        frame_text = _format_sse_frame(event_id="test-123", data_str=raw_json)
+        assert frame_text.endswith("\n\n")
+        lines = frame_text[:-2].splitlines()
+        assert lines[0] == "id: test-123"
+        for line in lines[1:]:
+            assert line.startswith("data: ")
+
+        # 2. _sse(frame) with multiline raw string or dict
+        frame = Frame(offset="1792748434762-0", event=raw_json)
+        sse_text = _sse(frame)
+        assert sse_text.startswith("id: 1792748434762-0\n")
+        assert sse_text.endswith("\n\n")
+        sse_lines = sse_text[:-2].splitlines()
+        for line in sse_lines[1:]:
+            assert line.startswith("data: ")
+
+        # 3. Simulate standard WHATWG client parser reassembly
+        data_lines = [line[len("data: ") :] for line in sse_lines if line.startswith("data: ")]
+        reconstructed = "\n".join(data_lines)
+        parsed = json.loads(reconstructed)
+        assert parsed["name"] == "subagent.start"
+        assert parsed["description"] == "line1\nline2"
+
