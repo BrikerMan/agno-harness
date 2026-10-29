@@ -174,10 +174,14 @@ def reorganize_messages_with_checkpoint(
     checkpoint_user = Message(
         role="user",
         content=f"[Context Checkpoint]\n{checkpoint_text}",
+        name="context_checkpoint",
+        from_history=True,
     )
     checkpoint_asst = Message(
         role="assistant",
         content="Understood. I have recorded the context checkpoint.",
+        name="context_checkpoint_ack",
+        from_history=True,
     )
 
     if not messages:
@@ -529,13 +533,13 @@ def make_checkpoint_hook(
     attaches it to the run metadata in the session database so future turns can
     prune older history and hit KV cache efficiently.
     """
+    from .closure import install_sealed_history_hook
+
+    install_sealed_history_hook()
 
     async def checkpoint_hook(
         scope: RunScope, *, completion: Any, error: BaseException | None
     ) -> AsyncIterator[BaseEvent]:
-        if error is not None:
-            return
-
         mgr = manager
         if mgr is None:
             agent = getattr(runtime, "agent", None)
@@ -546,6 +550,8 @@ def make_checkpoint_hook(
         if mgr is None or not mgr.last_checkpoint:
             return
 
+        checkpoint_data = mgr.last_checkpoint
+        mgr.last_checkpoint = None
         try:
             from .closure import attach_checkpoint_to_session
 
@@ -553,14 +559,14 @@ def make_checkpoint_hook(
                 runtime.db,
                 session_id=scope.thread_id,
                 run_id=scope.run_id,
-                checkpoint_data=mgr.last_checkpoint,
+                checkpoint_data=checkpoint_data,
             )
             logger.info(
-                "Persisted context checkpoint to session %s for run %s",
+                "Persisted context checkpoint to session %s for run %s (error=%s)",
                 scope.thread_id,
                 scope.run_id,
+                error is not None,
             )
-            mgr.last_checkpoint = None
         except Exception:
             logger.exception("Failed to attach context checkpoint to session %s", scope.thread_id)
 

@@ -54,7 +54,7 @@ from ..core.streamui import CardCatalog
 from ..core.types import ToolFilter
 from ..stores.prefix import apply_table_prefix
 from ..stores.registry import Stores
-from .closure import seal_session_run
+from .closure import install_sealed_history_hook, seal_session_run
 from .hitl import detect_resume, extract_resume_input, resume_result_events
 from .inspector import InspectorRegistry
 from .module import BridgeModule, ModuleRegistry
@@ -178,6 +178,7 @@ class AgentRuntime:
 
         self.stores = stores or Stores()
         check_history_pairing(self.db, self.stores, allow_ephemeral_agno_db=allow_ephemeral_agno_db)
+        install_sealed_history_hook()
         self.catalog = catalog
         self.enable_streamui = enable_streamui
         if artifact_root_dir is None and workspace_dir is not None:

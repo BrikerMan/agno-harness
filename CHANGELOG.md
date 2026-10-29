@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.10
+
+### Fixed
+
+- **Install `install_sealed_history_hook()` automatically in `AgentRuntime` and `make_checkpoint_hook`.** `AgentRuntime.__init__` and `make_checkpoint_hook` now install `_sealed_aware_get_messages` on `AgentSession.get_messages` automatically, so persisted context checkpoints (`metadata["checkpoint"]`) and sealed runs (`metadata["sealed"]`) prune prior session runs across turns without requiring legacy `compat.py` imports.
+- **Skip inline `[Context Checkpoint]` messages when replaying checkpointed runs and persist checkpoints on error.** `reorganize_messages_with_checkpoint` marks synthetic checkpoint messages with `from_history=True`, `_sealed_aware_get_messages` skips leading `[Context Checkpoint]` messages in `cp_run.messages` so the checkpoint run's real user query is preserved, and `make_checkpoint_hook` saves checkpoints generated before mid-run failures via `_find_run_with_grace`.
+
+### Changed
+
+- Bump package version to `0.3.10`.
+
 ## 0.3.9
 
 ### Fixed

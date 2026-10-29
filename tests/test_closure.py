@@ -646,3 +646,75 @@ async def test_interrupted_artifact_preserved_in_history_messages():
     assert "At-Least-Once Delivery" in content
     assert "131,500 msg/s" in content
     assert "(interrupted)" in content
+
+
+async def test_checkpoint_skips_inline_checkpoint_msg_and_persists_on_error():
+    """Verify cp_run with leading [Context Checkpoint] keeps real user query, and checkpoint_hook persists on error."""
+    from types import SimpleNamespace
+
+    from agno_harness.runtime.compression import SmartCompressionManager, make_checkpoint_hook
+
+    db = InMemoryDb()
+    session_id = "test-cp-inline-and-error"
+
+    run0 = RunOutput(
+        run_id="run-0",
+        agent_id="test-agent",
+        session_id=session_id,
+        status=RunStatus.completed,
+        messages=[
+            Message(role="user", content="Huge old turn"),
+            Message(role="assistant", content="Old answer"),
+        ],
+    )
+    run1 = RunOutput(
+        run_id="run-1",
+        agent_id="test-agent",
+        session_id=session_id,
+        status=RunStatus.completed,
+        messages=[
+            Message(role="user", content="[Context Checkpoint]\n# CONTEXT CHECKPOINT\nOld summary"),
+            Message(role="assistant", content="Understood. I have recorded the context checkpoint."),
+            Message(role="user", content="Translate article #12 to Chinese"),
+            Message(role="assistant", content="Staged and ready."),
+        ],
+        metadata={"checkpoint": {"content": "# CONTEXT CHECKPOINT\nOld summary"}},
+    )
+    run2_errored = RunOutput(
+        run_id="run-2",
+        agent_id="test-agent",
+        session_id=session_id,
+        status=RunStatus.error,
+        messages=[
+            Message(role="user", content="try again"),
+        ],
+    )
+    session = AgentSession(session_id=session_id, runs=[run0, run1, run2_errored])
+    db.upsert_session(session)
+
+    loaded = db.get_session(session_id=session_id)
+    assert loaded is not None
+    msgs = loaded.get_messages()
+    user_contents = [m.content for m in msgs if m.role == "user"]
+    assert user_contents == [
+        "[Context Checkpoint]\n# CONTEXT CHECKPOINT\nOld summary",
+        "Translate article #12 to Chinese",
+    ]
+
+    # Now simulate make_checkpoint_hook firing when run-2 errored after generating a newer checkpoint
+    mgr = SmartCompressionManager()
+    mgr.last_checkpoint = {"content": "# CONTEXT CHECKPOINT\nNewer summary including run-1"}
+    runtime = SimpleNamespace(db=db, agent=SimpleNamespace(compression_manager=mgr))
+    hook = make_checkpoint_hook(runtime)
+    scope = SimpleNamespace(thread_id=session_id, run_id="run-2")
+    async for _ in hook(scope, completion=None, error=RuntimeError("Request timed out")):
+        pass
+
+    assert mgr.last_checkpoint is None
+    loaded2 = db.get_session(session_id=session_id)
+    assert loaded2 is not None
+    msgs2 = loaded2.get_messages()
+    assert len(msgs2) == 2
+    assert msgs2[0].content == "[Context Checkpoint]\n# CONTEXT CHECKPOINT\nNewer summary including run-1"
+    assert msgs2[1].content == "Understood. I have recorded the context checkpoint."
+

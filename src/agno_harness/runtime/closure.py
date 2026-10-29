@@ -433,13 +433,10 @@ async def attach_checkpoint_to_session(
     if db is None or not session_id or not checkpoint_data:
         return False
 
-    session = await _get_db_session(db, session_id)
+    session, target_run = await _find_run_with_grace(db, session_id, run_id)
     if not session or not session.runs:
         return False
 
-    target_run = None
-    if run_id:
-        target_run = next((r for r in session.runs if getattr(r, "run_id", None) == run_id), None)
     if target_run is None:
         target_run = session.runs[-1]
 
@@ -567,29 +564,50 @@ def install_sealed_history_hook() -> None:
             )
 
             # 2. Checkpoint run's user prompt and final assistant response
-            cp_run_msgs = getattr(cp_run, "messages", None) or []
-            user_msg = next((m for m in cp_run_msgs if getattr(m, "role", None) == "user"), None)
-            if user_msg:
-                result_messages.append(
-                    Message(
-                        role="user",
-                        content=user_msg.content,
-                        from_history=True,
-                    )
+            # Only include the checkpoint run's own turn when it completed (or was sealed,
+            # which flips its status to completed above). Skip synthetic [Context Checkpoint]
+            # messages that may sit at the front of cp_run.messages.
+            if getattr(cp_run, "status", None) == RunStatus.completed:
+                cp_run_msgs = getattr(cp_run, "messages", None) or []
+                user_msg = next(
+                    (
+                        m
+                        for m in cp_run_msgs
+                        if getattr(m, "role", None) == "user"
+                        and getattr(m, "name", None) != "context_checkpoint"
+                        and not str(getattr(m, "content", "") or "").startswith("[Context Checkpoint]")
+                    ),
+                    None,
                 )
+                if user_msg:
+                    result_messages.append(
+                        Message(
+                            role="user",
+                            content=user_msg.content,
+                            from_history=True,
+                        )
+                    )
 
-            final_asst = next(
-                (m for m in reversed(cp_run_msgs) if getattr(m, "role", None) == "assistant"), None
-            )
-            if final_asst:
-                cleaned_asst = strip_stream_ui(final_asst.content)
-                result_messages.append(
-                    Message(
-                        role="assistant",
-                        content=cleaned_asst if cleaned_asst else "[Rendered UI Component]",
-                        from_history=True,
-                    )
+                final_asst = next(
+                    (
+                        m
+                        for m in reversed(cp_run_msgs)
+                        if getattr(m, "role", None) == "assistant"
+                        and getattr(m, "name", None) != "context_checkpoint_ack"
+                        and str(getattr(m, "content", "") or "")
+                        != "Understood. I have recorded the context checkpoint."
+                    ),
+                    None,
                 )
+                if final_asst:
+                    cleaned_asst = strip_stream_ui(final_asst.content)
+                    result_messages.append(
+                        Message(
+                            role="assistant",
+                            content=cleaned_asst if cleaned_asst else "[Rendered UI Component]",
+                            from_history=True,
+                        )
+                    )
 
             # 3. Subsequent runs after the checkpoint run
             subsequent_runs = runs[checkpoint_idx + 1 :]
