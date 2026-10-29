@@ -16,6 +16,8 @@ class OutboundMessage(BaseModel):
     reply_to_id: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
     raw_text: str = ""
+    quote_sender: str | None = None
+    quote_text: str | None = None
 
 
 class ChannelEvent(BaseModel):
@@ -25,6 +27,8 @@ class ChannelEvent(BaseModel):
     key: ConversationKey
     text: str = ""
     raw_text: str = ""
+    quote_sender: str | None = None
+    quote_text: str | None = None
     created_at: datetime | None = None
     sender_name: str | None = None
     action_id: str | None = None

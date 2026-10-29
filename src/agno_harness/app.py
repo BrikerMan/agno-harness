@@ -599,6 +599,15 @@ class RelayApp:
                 for att in event.attachments:
                     if att.is_image:
                         continue
+                    ctype = (att.content_type or "").lower()
+                    if (
+                        ctype == "text/html"
+                        or ctype.startswith("application/vnd.microsoft.card.")
+                        or ctype.startswith("application/vnd.microsoft.teams.")
+                    ):
+                        continue
+                    if not att.data and not att.url and not att.name:
+                        continue
                     name = att.name or "file"
                     if att.data:
                         doc_lines.append(f"• {name} (file attached, {len(att.data)} bytes)")
@@ -660,13 +669,27 @@ class RelayApp:
                             meta=meta,
                         )
 
-            # Guard against completely empty generation
+            # Automatically populate quote reference for user-prompted turns
+            if not outbound.quote_text and event.text:
+                outbound.quote_text = event.text
+                outbound.quote_sender = event.sender_name or "Question"
+
+            # Guard against completely empty generation or run error
+            ack_emoji = "✅"
             if not outbound.text and not outbound.cards:
-                outbound.text = "I completed the request, but have no additional text to display."
+                if collector.run_error:
+                    log.warning(f"Agent run failed for {key}: {collector.run_error}")
+                    outbound.text = (
+                        "Sorry, something went wrong while handling your request "
+                        "(the model timed out or returned an error). Please try again."
+                    )
+                    ack_emoji = "❌"
+                else:
+                    outbound.text = "I completed the request, but have no additional text to display."
 
             # 8. Deliver to channel & settle reaction ACK
             await channel.send(key, outbound)
-            await channel.settle(key, ack_token, emoji="✅")
+            await channel.settle(key, ack_token, emoji=ack_emoji)
 
             # 9. Audit outbound response
             for sink in self.sinks:
@@ -682,7 +705,9 @@ class RelayApp:
             with contextlib.suppress(Exception):
                 await channel.settle(key, ack_token, emoji="❌")
             err_msg = OutboundMessage(
-                text="Sorry, something went wrong while handling your request. Please try again."
+                text="Sorry, something went wrong while handling your request. Please try again.",
+                quote_sender=event.sender_name or "Question",
+                quote_text=event.text or None,
             )
             with contextlib.suppress(Exception):
                 await channel.send(key, err_msg)

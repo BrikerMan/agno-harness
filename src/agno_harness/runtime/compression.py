@@ -66,6 +66,7 @@ Generate a dense, highly structured Markdown document starting immediately with 
 Rules:
 - Maximize information density: use concise bullet points, tables, or key-value pairs.
 - Zero fluff: no conversational preamble (e.g. "Sure, here is the summary..."), no meta-commentary, no pleasantries.
+- DO NOT call any tools or emit tool calls under any circumstances; summarize strictly from the messages already in context.
 - Match the language of the conversation (use Chinese if the conversation is in Chinese, English if English).
 - Start directly with '# CONTEXT CHECKPOINT'.
 """

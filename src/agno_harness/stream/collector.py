@@ -155,10 +155,15 @@ class MessageCollector:
         self.rendered_items: list[Any] = []
         self.cards: list[dict[str, Any]] = []
         self.paused_descriptors: list[dict[str, Any]] = []
+        self.run_error: str | None = None
 
     def feed(self, event: Any) -> None:
         """Feed a single AG-UI event into the collector."""
         event_type = getattr(event, "type", None)
+
+        if event_type is EventType.RUN_ERROR or getattr(event_type, "name", "") == "RUN_ERROR":
+            self.run_error = str(getattr(event, "message", "") or "Run error")
+            return
 
         if event_type is EventType.TOOL_CALL_START:
             if not self.keep_interim_text:

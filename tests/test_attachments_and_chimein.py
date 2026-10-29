@@ -215,6 +215,41 @@ async def test_teams_mention_policy_with_activity_entities_and_recipient():
     assert await default_policy.should_chime_in(event_other) is False
     assert await default_policy.should_chime_in(event_bot_id) is True
 
+    # 5. Quoting the bot's card while mentioning someone else (Ellie) -> Suppressed
+    event_quote_other = ChannelEvent(
+        event_id="evt-teams-quote-other",
+        key=group_key,
+        text="> Moradin: 开始写\n\n<at>Ellie</at> 你这个怎么样？",
+        raw_text="<blockquote itemscope='' itemtype='http://schema.skype.com/Reply'><strong itemprop='msteams:author'>Moradin</strong><p>点开始写，或回复开始</p></blockquote><p><at id='0'>Ellie</at> 你这个怎么样？</p>",
+        raw={
+            "type": "message",
+            "recipient": {"id": "28:bot-app-id-123", "name": "Moradin"},
+            "entities": [
+                {
+                    "type": "mention",
+                    "mentioned": {"id": "29:ellie-aad-id", "name": "Ellie"},
+                    "text": "<at>Ellie</at>",
+                }
+            ],
+        },
+    )
+    assert await policy.should_chime_in(event_quote_other) is False
+
+    # 6. Quoting the bot's card without @mentions -> Suppressed (Moradin only appears inside blockquote)
+    event_quote_no_mention = ChannelEvent(
+        event_id="evt-teams-quote-no-mention",
+        key=group_key,
+        text="> Moradin: 开始写\n\n问艾丽：你这个怎么样？",
+        raw_text="<blockquote itemscope='' itemtype='http://schema.skype.com/Reply'><strong itemprop='msteams:author'>Moradin</strong><p>点开始写，或回复开始</p></blockquote><p>问艾丽：你这个怎么样？</p>",
+        raw={
+            "type": "message",
+            "recipient": {"id": "28:bot-app-id-123", "name": "Moradin"},
+            "entities": [],
+        },
+    )
+    assert await policy.should_chime_in(event_quote_no_mention) is False
+
+
 
 @pytest.mark.asyncio
 async def test_dual_raw_and_parsed_storage_in_sql_sink():
@@ -287,3 +322,78 @@ def test_onboarding_helpers_generation():
     assert teams_manifest["id"] == "app-guid-123"
     assert teams_manifest["name"]["short"] == "MyTestBot"
     assert "ChannelMessage.Read.Group" in [s[0] for s in lark_guide.get("teams_scopes", [])] or True
+
+
+@pytest.mark.asyncio
+async def test_html_attachment_not_reported_as_unreadable_file():
+    agent = FakeAgent()
+    captured_meta: dict[str, Any] = {}
+
+    class EmptyProcessor:
+        async def process(
+            self, attachments: list[InboundAttachment], event: ChannelEvent
+        ) -> str | None:
+            return ""
+
+    async def fake_stream_events(run_input, **kwargs):
+        captured_meta.update(kwargs.get("metadata") or {})
+        yield TextMessageContentEvent(message_id="msg-1", delta="OK")
+
+    channel = MockChannel(name="teams")
+    runtime = AgentRuntime(agent=agent)
+    app = RelayApp(runtime=runtime, attachment_processor=EmptyProcessor())
+    app.add_channel(channel)
+    app.runtime.stream_events = fake_stream_events  # type: ignore[method-assign]
+
+    key = ConversationKey(
+        platform="teams", chat_id="chat-1", sender_id="usr-1", is_direct_message=True
+    )
+    event = ChannelEvent(
+        event_id="evt-html-1",
+        key=key,
+        text="Translate https://www.yodo1.com/en/blog/post",
+        raw_text="<p>Translate <a href='https://www.yodo1.com/en/blog/post'>post</a></p>",
+        attachments=[
+            InboundAttachment(name="", content_type="text/html", url=None),
+        ],
+    )
+
+    outbound = await app.handle_event(channel, event)
+    assert outbound is not None
+    assert outbound.text == "OK"
+    assert "attachments_text" not in captured_meta
+
+
+@pytest.mark.asyncio
+async def test_run_error_event_reports_failure_instead_of_no_text():
+    from ag_ui.core import RunErrorEvent
+
+    agent = FakeAgent()
+    settled_emojis: list[str] = []
+
+    class TrackingChannel(MockChannel):
+        async def settle(
+            self, destination: ConversationKey, ack_token: Any, emoji: str = "✅"
+        ) -> None:
+            settled_emojis.append(emoji)
+
+    async def failing_stream_events(run_input, **kwargs):
+        yield RunErrorEvent(message="Request timed out.", code="RUNTIME_ERROR")
+
+    channel = TrackingChannel(name="teams")
+    runtime = AgentRuntime(agent=agent)
+    app = RelayApp(runtime=runtime)
+    app.add_channel(channel)
+    app.runtime.stream_events = failing_stream_events  # type: ignore[method-assign]
+
+    key = ConversationKey(
+        platform="teams", chat_id="chat-1", sender_id="usr-1", is_direct_message=True
+    )
+    event = ChannelEvent(event_id="evt-err-1", key=key, text="Translate post")
+
+    outbound = await app.handle_event(channel, event)
+    assert outbound is not None
+    assert "I completed the request, but have no additional text to display." not in outbound.text
+    assert "timed out or returned an error" in outbound.text
+    assert settled_emojis == ["❌"]
+

@@ -505,3 +505,52 @@ def channel_key(chat_id: str = "19:chat@thread.v2") -> Any:
     from agno_harness import ConversationKey
 
     return ConversationKey(platform="teams", chat_id=chat_id, is_direct_message=True)
+
+
+def test_teams_bot_adapter_clean_quote_text_images():
+    from agno_harness.channels.teams.channel import TeamsBotAdapter
+
+    # Text with markdown image -> image stripped, text kept
+    assert (
+        TeamsBotAdapter.clean_quote_text("请看这个 ![图片](itemid:abc) 怎么样？")
+        == "请看这个 怎么样？"
+    )
+    # Only markdown image -> replaced with [图片]
+    assert TeamsBotAdapter.clean_quote_text("![图片](itemid:abc)") == "[图片]"
+    # Text with html img tag -> img stripped
+    assert (
+        TeamsBotAdapter.clean_quote_text("请问 <img src='https://smba.trafficmanager.net/123'> 这个对吗？")
+        == "请问 这个对吗？"
+    )
+    # Only html img -> replaced with [图片]
+    assert TeamsBotAdapter.clean_quote_text("<img src='itemid:abc'>") == "[图片]"
+    # Nested blockquotes -> stripped
+    assert (
+        TeamsBotAdapter.clean_quote_text("> Moradin: 开始写\n> 点开始\n老王：这个怎么样？")
+        == "老王：这个怎么样？"
+    )
+
+
+def test_teams_bot_adapter_format_reply_text():
+    from agno_harness.channels.teams.channel import TeamsBotAdapter
+
+    msg = OutboundMessage(
+        text="好的，收到。",
+        quote_sender="老王",
+        quote_text="![图片](itemid:123) 这个大纲怎么调整？",
+    )
+    formatted = TeamsBotAdapter.format_reply_text(msg)
+    assert formatted == "> **老王:** 这个大纲怎么调整？\n\n好的，收到。"
+
+    # Does not duplicate if text already has quote prefix
+    msg_already_quoted = OutboundMessage(
+        text="> **老王:** 这个大纲怎么调整？\n\n好的，收到。",
+        quote_sender="老王",
+        quote_text="这个大纲怎么调整？",
+    )
+    assert TeamsBotAdapter.format_reply_text(msg_already_quoted) == msg_already_quoted.text
+
+    # No quote if quote_text is empty
+    msg_no_quote = OutboundMessage(text="普通回复")
+    assert TeamsBotAdapter.format_reply_text(msg_no_quote) == "普通回复"
+

@@ -8,6 +8,7 @@ raise; they never return a fake activity id.
 """
 
 import logging
+import re
 from typing import Any, Protocol, runtime_checkable
 
 from ...api_paths import CHANNELS_PATH
@@ -213,6 +214,61 @@ class TeamsBotAdapter:
             )
         return ref
 
+    @staticmethod
+    def clean_quote_text(text: str, *, quote_limit: int = 200) -> str:
+        """Strip image markdown, nested blockquotes, HTML tags, and excessive length from quoted text."""
+        if not text:
+            return ""
+        # 1. Strip existing quote blocks (lines starting with >) so we don't quote a quote
+        lines = [line.lstrip("> ").strip() for line in text.splitlines() if not line.strip().startswith(">")]
+        raw = " ".join(lines).strip()
+        if not raw:
+            raw = text.strip()
+
+        # 2. Check if there is non-image, non-tag text:
+        text_without_images = re.sub(r"!\[(.*?)\]\([^)]+\)", "", raw)
+        text_without_images = re.sub(r"<img[^>]*>", "", text_without_images, flags=re.IGNORECASE)
+        text_without_tags = re.sub(r"<[^>]+>", "", text_without_images)
+        has_meaningful_text = bool(" ".join(text_without_tags.split()))
+
+        # If there is meaningful text, omit the images entirely.
+        # If there is NO other text (only images), replace with [图片].
+        if has_meaningful_text:
+            cleaned = re.sub(r"!\[(.*?)\]\([^)]+\)", "", raw)
+            cleaned = re.sub(r"<img[^>]*>", "", cleaned, flags=re.IGNORECASE)
+        else:
+            cleaned = re.sub(r"!\[(.*?)\]\([^)]+\)", "[图片]", raw)
+            cleaned = re.sub(r"<img[^>]*>", "[图片]", cleaned, flags=re.IGNORECASE)
+
+        cleaned = re.sub(r"<[^>]+>", "", cleaned)
+        cleaned = " ".join(cleaned.split())
+        cleaned = re.sub(r"(\[图片\]\s*)+", "[图片] ", cleaned).strip()
+        if len(cleaned) > quote_limit:
+            cleaned = cleaned[: quote_limit - 3].rstrip() + "..."
+        return cleaned
+
+    @staticmethod
+    def quote_prefix(message: OutboundMessage, *, quote_limit: int = 200) -> str:
+        if not message.quote_text:
+            return ""
+        question = TeamsBotAdapter.clean_quote_text(message.quote_text, quote_limit=quote_limit)
+        if not question:
+            return ""
+        who = message.quote_sender or "Question"
+        return f"> **{who}:** {question}\n\n"
+
+    @staticmethod
+    def format_reply_text(message: OutboundMessage, *, quote_limit: int = 200) -> str:
+        body = (message.text or "").strip()
+        if body.startswith("> "):
+            return body
+        prefix = TeamsBotAdapter.quote_prefix(message, quote_limit=quote_limit)
+        if not prefix:
+            return body
+        if not body:
+            return prefix.removesuffix("\n\n")
+        return f"{prefix}{body}"
+
     async def send_reply(
         self,
         destination: ConversationKey,
@@ -228,7 +284,7 @@ class TeamsBotAdapter:
         recipient = _account(ref.user_id, ref.user_name)
         if recipient is not None:
             activity["recipient"] = recipient
-        text = message.text or ""
+        text = self.format_reply_text(message)
         if text:
             activity["text"] = text
             activity["textFormat"] = "markdown"

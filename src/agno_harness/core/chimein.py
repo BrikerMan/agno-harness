@@ -71,10 +71,12 @@ class MentionOnlyPolicy:
                     target_ids.add(r_aad)
 
         # 2. Check raw entities for Teams / platform mentions
+        has_mention_entities = False
         if isinstance(event.raw, dict):
             entities = event.raw.get("entities", [])
             for e in entities:
                 if isinstance(e, dict) and e.get("type") == "mention":
+                    has_mention_entities = True
                     mentioned = e.get("mentioned") or {}
                     if isinstance(mentioned, dict):
                         m_id = str(mentioned.get("id") or "").lower().removeprefix("28:").strip()
@@ -86,10 +88,19 @@ class MentionOnlyPolicy:
                         if target_names and m_name in target_names:
                             return True
 
-        # 3. Check for mention tag in cleaned Markdown text or raw_text
-        text = event.text or ""
-        raw_text = event.raw_text or ""
-        search_space = f"{text} {raw_text}".lower()
+        # If the platform delivered explicit mention entities, but none was the bot,
+        # the user explicitly addressed other people. Do not chime in.
+        if has_mention_entities:
+            return False
+
+        # 3. Check for mention tag in cleaned Markdown text or raw_text (excluding quoted blocks)
+        stripped_raw = re.sub(
+            r"<blockquote[\s\S]*?</blockquote>", "", event.raw_text or "", flags=re.IGNORECASE
+        )
+        stripped_text = "\n".join(
+            line for line in (event.text or "").splitlines() if not line.strip().startswith(">")
+        )
+        search_space = f"{stripped_text} {stripped_raw}".lower()
 
         for name in target_names:
             if not name:
