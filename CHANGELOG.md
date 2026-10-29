@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.3.9
+
+### Fixed
+
+- **Surface `RUN_ERROR` instead of reporting "no additional text to display".** `MessageCollector` now records `EventType.RUN_ERROR` messages; when a model call times out or fails without producing text or cards, `RelayApp.handle_event` replies with an explicit error message and settles the turn reaction with `❌` instead of `✅`.
+- **Ignore non-file `text/html` and card attachments in the fallback attachment summary.** Teams attaches a `text/html` body block to every inbound message; when `attachment_processor` returned empty because no document was attached, `RelayApp.handle_event` previously reported `• file (file is attached; content could not be read or permission required)`. Non-file `text/html`, card, and empty shell attachments are now skipped.
+- **Prevent tool calls during in-context checkpoint compression.** `DEFAULT_IN_CONTEXT_CHECKPOINT_PROMPT` in `SmartCompressionManager` now explicitly forbids emitting tool calls during compaction, and `TeamsBotAdapter.clean_quote_text` strips inline markdown/HTML images and nested blockquotes from quoted reply headers.
+
+### Changed
+
+- Bump package version to `0.3.9`.
+
+## 0.3.8
+
+### Fixed
+
+- **Encode multiline SSE frames with WHATWG-compliant `data:` prefixes.** Multiline payloads in SSE transport now prefix every line with `data: ` so clients do not drop lines after the first newline.
+
+### Changed
+
+- Bump package version to `0.3.8`.
+
+## 0.3.7
+
+### Fixed
+
+- **Restrict `MentionOnlyPolicy` to the bot's own identity in group chats.** Group chat messages that mention another user or bot (or quote the bot's card without mentioning the bot in the active reply body) are now suppressed instead of triggering a reply.
+
+### Changed
+
+- Bump package version to `0.3.7`.
+
+## 0.3.6
+
+### Added
+
+- **Modular channel packages (`channels/teams`, `channels/lark`, `channels/cli`, `channels/web`)** with clean backward-compatible re-exports.
+- **Microsoft Graph attachment enrichment for Teams.** `TeamsGraphClient` fetches message attachments and downloads SharePoint/OneDrive shared files.
+
+### Changed
+
+- Bump package version to `0.3.6`.
+
 ## 0.3.5
 
 ### Changed
