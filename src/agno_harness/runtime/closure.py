@@ -575,7 +575,9 @@ def install_sealed_history_hook() -> None:
                         for m in cp_run_msgs
                         if getattr(m, "role", None) == "user"
                         and getattr(m, "name", None) != "context_checkpoint"
-                        and not str(getattr(m, "content", "") or "").startswith("[Context Checkpoint]")
+                        and not str(getattr(m, "content", "") or "").startswith(
+                            "[Context Checkpoint]"
+                        )
                     ),
                     None,
                 )

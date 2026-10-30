@@ -250,7 +250,6 @@ async def test_teams_mention_policy_with_activity_entities_and_recipient():
     assert await policy.should_chime_in(event_quote_no_mention) is False
 
 
-
 @pytest.mark.asyncio
 async def test_dual_raw_and_parsed_storage_in_sql_sink():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -396,4 +395,3 @@ async def test_run_error_event_reports_failure_instead_of_no_text():
     assert "I completed the request, but have no additional text to display." not in outbound.text
     assert "timed out or returned an error" in outbound.text
     assert settled_emojis == ["❌"]
-

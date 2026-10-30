@@ -685,7 +685,9 @@ class RelayApp:
                     )
                     ack_emoji = "❌"
                 else:
-                    outbound.text = "I completed the request, but have no additional text to display."
+                    outbound.text = (
+                        "I completed the request, but have no additional text to display."
+                    )
 
             # 8. Deliver to channel & settle reaction ACK
             await channel.send(key, outbound)

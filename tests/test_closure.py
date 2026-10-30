@@ -674,7 +674,9 @@ async def test_checkpoint_skips_inline_checkpoint_msg_and_persists_on_error():
         status=RunStatus.completed,
         messages=[
             Message(role="user", content="[Context Checkpoint]\n# CONTEXT CHECKPOINT\nOld summary"),
-            Message(role="assistant", content="Understood. I have recorded the context checkpoint."),
+            Message(
+                role="assistant", content="Understood. I have recorded the context checkpoint."
+            ),
             Message(role="user", content="Translate article #12 to Chinese"),
             Message(role="assistant", content="Staged and ready."),
         ],
@@ -715,6 +717,8 @@ async def test_checkpoint_skips_inline_checkpoint_msg_and_persists_on_error():
     assert loaded2 is not None
     msgs2 = loaded2.get_messages()
     assert len(msgs2) == 2
-    assert msgs2[0].content == "[Context Checkpoint]\n# CONTEXT CHECKPOINT\nNewer summary including run-1"
+    assert (
+        msgs2[0].content
+        == "[Context Checkpoint]\n# CONTEXT CHECKPOINT\nNewer summary including run-1"
+    )
     assert msgs2[1].content == "Understood. I have recorded the context checkpoint."
-

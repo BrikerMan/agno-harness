@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.11
+
+### Added
+
+- **Teams rich HTML link recovery and multiline quote blocks.**
+  - `_HTMLToMarkdownParser` converts anchor tags to standard Markdown `[text](URL)` (or `[URL](URL)` when text is empty), and recovers full destination URLs from `text/html` attachments when Teams clients truncate URLs with ellipses (`...`).
+  - Blockquote replies (`itemtype=".../Reply"`) are rendered as `<quoted messageId="...">\n> ...\n</quoted>` with explicit boundaries, stripping duplicate sender prefixes and prefixing each quoted line with `> `.
+  - Mention spans (`<span itemtype=".../Mention">`) are converted to standard `<at>Name</at>` tags and split mention fragments are merged.
+  - Inbound attachments ignore `text/html` and `messagereference` so they are not treated as file downloads.
+
+### Changed
+
+- Bump package version to `0.3.11`.
+
 ## 0.3.10
 
 ### Fixed

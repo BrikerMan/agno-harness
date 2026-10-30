@@ -7,6 +7,7 @@ client-credentials token. Missing credentials or a missing conversation referenc
 raise; they never return a fake activity id.
 """
 
+import json
 import logging
 import re
 from typing import Any, Protocol, runtime_checkable
@@ -19,7 +20,12 @@ from ...core.chimein import ChimeInPolicy, MentionOnlyPolicy
 from ...core.prompt import parse_sent_at
 from ...sessions.models import ConversationKey
 from ..base import BaseChannel
-from ..cleaning import teams_html_to_markdown
+from ..cleaning import (
+    looks_like_html,
+    markdown_from_teams_html,
+    recover_teams_html,
+    teams_html_to_markdown,
+)
 from .auth import TeamsJwtVerifier
 from .connector import (
     TeamsAuthError,
@@ -220,7 +226,11 @@ class TeamsBotAdapter:
         if not text:
             return ""
         # 1. Strip existing quote blocks (lines starting with >) so we don't quote a quote
-        lines = [line.lstrip("> ").strip() for line in text.splitlines() if not line.strip().startswith(">")]
+        lines = [
+            line.lstrip("> ").strip()
+            for line in text.splitlines()
+            if not line.strip().startswith(">")
+        ]
         raw = " ".join(lines).strip()
         if not raw:
             raw = text.strip()
@@ -531,12 +541,68 @@ class TeamsChannel(BaseChannel):
         mentions = [
             item for item in entities if isinstance(item, dict) and item.get("type") == "mention"
         ]
-        cleaned_text = teams_html_to_markdown(raw_text, mentions=mentions) if raw_text else ""
+
+        # Check if text/html attachment carries richer HTML with links or quotes
+        raw_attachments = activity_data.get("attachments") or []
+        body_obj = activity_data.get("body")
+        body_html = ""
+        if isinstance(body_obj, dict):
+            body_html = str(body_obj.get("content") or "")
+        elif isinstance(body_obj, str):
+            body_html = body_obj
+
+        recovered_html = recover_teams_html(
+            attachments=raw_attachments if isinstance(raw_attachments, list) else None,
+            body_html=body_html if looks_like_html(body_html) else None,
+            raw_html=raw_text if looks_like_html(raw_text) else None,
+        )
+        if recovered_html:
+            cleaned_text = markdown_from_teams_html(
+                recovered_html, plain_text=raw_text, mentions=mentions
+            )
+        else:
+            cleaned_text = teams_html_to_markdown(raw_text, mentions=mentions) if raw_text else ""
         action_id, action_value = extract_card_action(activity_data)
 
+        quote_sender: str | None = None
+        quote_text: str | None = None
+        for entity in entities:
+            if isinstance(entity, dict) and entity.get("type") == "quotedReply":
+                qr = entity.get("quotedReply") or {}
+                if isinstance(qr, dict):
+                    quote_sender = quote_sender or qr.get("senderName")
+                    quote_text = quote_text or qr.get("preview")
+
+        if not quote_text:
+            for att in raw_attachments:
+                if (
+                    isinstance(att, dict)
+                    and str(att.get("contentType") or "").lower() == "messagereference"
+                ):
+                    cnt = att.get("content")
+                    if isinstance(cnt, str):
+                        try:
+                            ref_data = json.loads(cnt)
+                            quote_text = quote_text or ref_data.get("messagePreview")
+                            sender_dict = ref_data.get("messageSender") or {}
+                            user_dict = sender_dict.get("user") or {}
+                            quote_sender = quote_sender or user_dict.get("displayName")
+                        except Exception:
+                            pass
+
         inbound_attachments: list[InboundAttachment] = []
-        for attachment in activity_data.get("attachments") or []:
+        for attachment in raw_attachments:
             if isinstance(attachment, dict):
+                ctype = str(
+                    attachment.get("contentType") or attachment.get("content_type") or ""
+                ).lower()
+                if (
+                    ctype == "text/html"
+                    or ctype == "messagereference"
+                    or ctype.startswith("application/vnd.microsoft.card.")
+                    or ctype.startswith("application/vnd.microsoft.teams.")
+                ):
+                    continue
                 inbound_attachments.append(
                     InboundAttachment(
                         id=str(attachment["id"]) if attachment.get("id") else None,
@@ -561,6 +627,8 @@ class TeamsChannel(BaseChannel):
             ),
             text=cleaned_text,
             raw_text=raw_text,
+            quote_sender=quote_sender,
+            quote_text=quote_text,
             created_at=parse_sent_at(activity_data.get("timestamp")),
             sender_name=sender_name,
             action_id=action_id,
