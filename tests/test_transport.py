@@ -537,4 +537,3 @@ class TestSSEMultiline:
         parsed = json.loads(reconstructed)
         assert parsed["name"] == "subagent.start"
         assert parsed["description"] == "line1\nline2"
-

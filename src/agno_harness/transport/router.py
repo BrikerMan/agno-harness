@@ -436,7 +436,9 @@ async def _attach(
             # checking ownership twice; the frame carries the same information a
             # 404 would.
             yield _format_sse_frame(
-                data_str=json.dumps({"type": "RUN_ERROR", "message": "run not found"}, ensure_ascii=False)
+                data_str=json.dumps(
+                    {"type": "RUN_ERROR", "message": "run not found"}, ensure_ascii=False
+                )
             )
 
     async for chunk in _with_sse_ping(_frames()):

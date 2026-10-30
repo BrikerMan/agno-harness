@@ -99,3 +99,74 @@ def test_clean_lark_mentions():
     ]
     cleaned = clean_lark_mentions(text, mentions)
     assert cleaned == "<at>Alice</at> can you help <at>Charlie</at>?"
+
+
+def test_teams_mention_span_conversion():
+    html = '<p><span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Eliyar Eziz</span> please review</p>'
+    md = teams_html_to_markdown(html)
+    assert md == "<at>Eliyar Eziz</at> please review"
+
+
+def test_teams_truncated_url_recovered():
+    full_url = "https://app.notion.com/p/CN-How-Chinese-Game-Developers-and-Global-IPs-Can-Build-the-Next-Generation-of-Hit-Games-409e36a89a2b804790d1ca56c47f0e2e?source=copy_link"
+    truncated_text = "https://app.notion.com/p/CN-How-Chinese-Game-Developers-and-Global-IPs-Can-Build-the-Next-Generatio…"
+    html = f'<p>Here is the draft : <a href="{full_url}">{truncated_text}</a> check it out</p>'
+    md = teams_html_to_markdown(html)
+    assert md == f"Here is the draft : [{truncated_text}]({full_url}) check it out"
+
+
+def test_teams_named_link_preserved():
+    url = "https://yodo1net-my.sharepoint.com/:w:/g/personal/test/file.docx"
+    html = f'<p>Please see <a href="{url}">AMC press release.docx</a> now</p>'
+    md = teams_html_to_markdown(html)
+    assert md == f"Please see [AMC press release.docx]({url}) now"
+
+
+def test_teams_reply_blockquote_conversion():
+    html = (
+        '<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="1793267821469">'
+        '<strong itemprop="mri" itemid="28:abc">Display Name</strong>'
+        '<span itemprop="time" itemid="1793267821469"></span>'
+        '<p itemprop="preview">Eliyar Eziz: Moradin try again\nLine 2</p>'
+        "</blockquote>"
+        "<p>let me check that</p>"
+    )
+    md = teams_html_to_markdown(html)
+    assert '<quoted messageId="1793267821469">' in md
+    assert "> **Display Name:** Eliyar Eziz: Moradin try again" in md
+    assert "> Line 2" in md
+    assert "</quoted>" in md
+    assert "let me check that" in md
+
+
+def test_teams_reply_multiline_and_sender_dedup():
+    html = (
+        '<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="1793267821469">'
+        '<strong itemprop="mri">Eliyar Eziz</strong>'
+        '<p itemprop="preview">Eliyar Eziz: Hello Moradin<br>Please look at item A<br>And item B</p>'
+        "</blockquote>"
+        "<p>I am working on it</p>"
+    )
+    md = teams_html_to_markdown(html)
+    assert (
+        '<quoted messageId="1793267821469">\n'
+        "> **Eliyar Eziz:** Hello Moradin\n"
+        "> Please look at item A\n"
+        "> And item B\n"
+        "</quoted>"
+    ) in md
+    assert "I am working on it" in md
+
+
+def test_recover_teams_html_prefers_attachment_with_links():
+    from agno_harness.channels.cleaning import recover_teams_html
+
+    plain_body = "<p>Here is the document without link</p>"
+    rich_attachment = [
+        {
+            "contentType": "text/html",
+            "content": '<p>Here is the document with <a href="https://example.com/doc">link</a></p>',
+        }
+    ]
+    recovered = recover_teams_html(attachments=rich_attachment, body_html=plain_body)
+    assert "https://example.com/doc" in recovered

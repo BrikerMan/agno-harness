@@ -505,3 +505,62 @@ def channel_key(chat_id: str = "19:chat@thread.v2") -> Any:
     from agno_harness import ConversationKey
 
     return ConversationKey(platform="teams", chat_id=chat_id, is_direct_message=True)
+
+
+def test_teams_channel_event_from_activity_recovers_html_and_quotes():
+    from agno_harness import TeamsChannel
+
+    channel = TeamsChannel()
+    activity_data = {
+        "id": "1793336052017",
+        "type": "message",
+        "text": '<at>Moradin</at> pls update draft: https://app.notion.com/p/CN-...Generatio…\n<quoted messageId="1793267821469"/>',
+        "entities": [
+            {
+                "type": "quotedReply",
+                "quotedReply": {
+                    "messageId": "1793267821469",
+                    "senderName": "Display Name",
+                    "preview": "Eliyar Eziz: Moradin try again",
+                },
+            }
+        ],
+        "attachments": [
+            {
+                "contentType": "text/html",
+                "content": (
+                    '<p><span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Moradin</span> '
+                    'pls update draft: <a href="https://app.notion.com/p/CN-full-url-123">https://app.notion.com/p/CN-...Generatio…</a></p>'
+                    '<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="1793267821469">'
+                    '<strong itemprop="mri">Display Name</strong>'
+                    '<p itemprop="preview">Eliyar Eziz: Moradin try again</p>'
+                    "</blockquote>"
+                ),
+            },
+            {
+                "id": "real-file-1",
+                "name": "data.csv",
+                "contentType": "text/csv",
+                "contentUrl": "https://example.com/data.csv",
+            },
+        ],
+    }
+
+    event = channel._event_from_activity(activity_data)
+    # 1. URL was recovered to standard markdown [name](full_url)
+    assert (
+        "[https://app.notion.com/p/CN-...Generatio…](https://app.notion.com/p/CN-full-url-123)"
+        in event.text
+    )
+    # 2. Mentions in HTML span converted
+    assert "<at>Moradin</at>" in event.text
+    # 3. Quote metadata populated
+    assert event.quote_sender == "Display Name"
+    assert event.quote_text == "Eliyar Eziz: Moradin try again"
+    assert (
+        '<quoted messageId="1793267821469">\n> **Display Name:** Eliyar Eziz: Moradin try again\n</quoted>'
+        in event.text
+    )
+    # 4. text/html filtered from inbound attachments, real file kept
+    assert len(event.attachments) == 1
+    assert event.attachments[0].name == "data.csv"
