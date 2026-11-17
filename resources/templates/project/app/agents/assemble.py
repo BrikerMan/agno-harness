@@ -9,10 +9,17 @@ knowledge_dir is the live markdown store, normally data/knowledge/.
 """
 
 from pathlib import Path
+from typing import Any
 
 from agno.agent import Agent
 
-from agno_harness import MarkdownKnowledge, SkillManager, SubAgentToolkit
+from agno_harness import (
+    LearningStore,
+    LearningToolkit,
+    MarkdownKnowledge,
+    SkillManager,
+    SubAgentToolkit,
+)
 from app.settings import model
 
 
@@ -26,6 +33,7 @@ def assemble(
     knowledge_dir: Path,
     tools: list,
     specialists: list | None = None,
+    learning: LearningStore | None = None,
     db=None,
 ) -> Agent:
     extra_tools: list = []
@@ -41,10 +49,14 @@ def assemble(
             text = f"{text}\n\n{skill_prompt}"
     if specialists:
         extra_tools.append(SubAgentToolkit(agents=specialists))
+    instructions: Any = text
+    if learning is not None:
+        extra_tools.append(LearningToolkit(learning))
+        instructions = learning.compose_instructions(text)
     kwargs = {
         "name": name,
         "model": model(),
-        "instructions": text,
+        "instructions": instructions,
         "tools": [*tools, *extra_tools],
         "telemetry": False,
         "markdown": True,

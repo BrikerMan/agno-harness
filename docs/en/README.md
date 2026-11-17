@@ -46,6 +46,7 @@ Cookbook index: [00-agent-cookbook/README.md](00-agent-cookbook/README.md)
 6. [06 Multi-agent delegation](02-interactions/06-multi-agent-delegation.md)
 7. [07 Skills and JIT](02-interactions/07-skills-and-jit.md)
 8. [08 Streaming artifacts](02-interactions/08-streaming-artifacts.md)
+9. [09 Continuous learning and living playbooks](02-interactions/09-learning-and-playbook.md)
 
 ### 2.3 Channels
 

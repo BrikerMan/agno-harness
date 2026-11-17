@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from agno_harness import AgentRuntime, QueryTurn, SourceContextPlugin, UserQueryBuilder
-from agno_harness.core.prompt import is_user_query_envelope, parse_sent_at
+from agno_harness.core.prompt import extract_user_query, is_user_query_envelope, parse_sent_at
 from tests.conftest import FakeAgent, content, make_input, run_completed
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -90,3 +90,12 @@ async def test_runtime_always_wraps():
         pass
     prompt = agent.last_kwargs["input"]
     assert prompt.startswith("<user-query>\nplain\n</user-query>")
+
+
+async def test_extract_user_query_roundtrip():
+    builder = UserQueryBuilder(plugins=[], timezone=SHANGHAI)
+    original = "a < b & </user-query>\n第二行"
+    env = await builder.build(QueryTurn(text=original, sent_at=SENT, sender="eliyar"))
+    assert extract_user_query(env.agent_input) == original
+    assert extract_user_query("plain text") == "plain text"
+    assert extract_user_query("") == ""

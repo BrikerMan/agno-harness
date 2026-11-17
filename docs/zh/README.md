@@ -46,6 +46,7 @@
 6. [06 多 Agent 委托](02-interactions/06-multi-agent-delegation.md)
 7. [07 Skills 与 JIT](02-interactions/07-skills-and-jit.md)
 8. [08 流式 Artifact](02-interactions/08-streaming-artifacts.md)
+9. [09 持续学习与 Living Playbook](02-interactions/09-learning-and-playbook.md)
 
 ### 2.3 渠道
 

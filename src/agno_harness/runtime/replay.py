@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..core.prompt import extract_user_query
 from ..core.streamui import CardCatalog, blocks_to_payload, parse_streamui_text
 
 
@@ -39,16 +40,17 @@ def input_to_text(input_obj: Any) -> str:
         return ""
     content = getattr(input_obj, "input_content", input_obj)
     if isinstance(content, str):
-        return content
+        return extract_user_query(content)
     message_content = getattr(content, "content", None)
     if isinstance(message_content, str):
-        return message_content
+        return extract_user_query(message_content)
     if isinstance(message_content, list):
-        return " ".join(
+        joined = " ".join(
             part.get("text", "") if isinstance(part, dict) else str(part)
             for part in message_content
         )
-    return str(content) if content else ""
+        return extract_user_query(joined)
+    return extract_user_query(str(content)) if content else ""
 
 
 def _part_text(part: Any) -> str:
@@ -250,7 +252,7 @@ def _raw_run_input_text(run: Any) -> str:
         inp = run.get("input")
         if isinstance(inp, dict):
             content = inp.get("input_content", inp.get("content", inp))
-            return (
+            raw_text = (
                 input_to_text(content)
                 if not isinstance(content, (dict, list))
                 else (
@@ -259,13 +261,14 @@ def _raw_run_input_text(run: Any) -> str:
                     else input_to_text(content)
                 )
             )
+            return extract_user_query(raw_text)
         if inp is not None:
             return input_to_text(inp)
         # Some dumps store the prompt at the top level.
         for key in ("message", "content"):
             val = run.get(key)
             if isinstance(val, str) and val.strip():
-                return val
+                return extract_user_query(val)
         return ""
     return input_to_text(getattr(run, "input", None))
 

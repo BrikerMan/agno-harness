@@ -51,14 +51,22 @@ def copy_project(target: Path, *, channel: str) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, dest)
     copy_knowledge_seeds(target)
+    copy_learning_seeds(target)
 
 
 def copy_knowledge_seeds(project: Path) -> None:
     """Copy app/knowledge markdown into data/knowledge when the live file is missing."""
-    seed_root = project / "app" / "knowledge"
+    _copy_markdown_seeds(project / "app" / "knowledge", project / "data" / "knowledge")
+
+
+def copy_learning_seeds(project: Path) -> None:
+    """Copy app/learning markdown into data/learning when the live file is missing."""
+    _copy_markdown_seeds(project / "app" / "learning", project / "data" / "learning")
+
+
+def _copy_markdown_seeds(seed_root: Path, live_root: Path) -> None:
     if not seed_root.is_dir():
         return
-    live_root = project / "data" / "knowledge"
     for src in sorted(seed_root.rglob("*")):
         if not src.is_file() or src.suffix.lower() not in {".md", ".markdown"}:
             continue

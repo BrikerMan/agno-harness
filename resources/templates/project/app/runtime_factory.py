@@ -12,15 +12,20 @@ from agno.db.sqlite import SqliteDb
 from agno_harness import (
     AgentRuntime,
     HideToolFilter,
+    LearningDigestor,
     RelayApp,
     SessionManager,
     SQLiteSessionStore,
+    SQLiteSink,
     SubAgentToolkit,
+    attach_session_close_digest,
 )
 from app.agents.main.agent import build as build_main
+from app.agents.main.agent import learning_store
 from app.agents.main.cards import CARD_CATALOG
 from app.agents.main.tools.background_task import bind as bind_background_task
-from app.paths import AGENT_DB, ensure_data
+from app.paths import AGENT_DB, AUDIT_DB, ensure_data
+from app.settings import model
 
 
 def build_relay() -> RelayApp:
@@ -36,6 +41,13 @@ def build_relay() -> RelayApp:
     relay = RelayApp(
         runtime=runtime,
         session_manager=SessionManager(store=SQLiteSessionStore(str(AGENT_DB))),
+    )
+    sink = SQLiteSink(str(AUDIT_DB))
+    relay.add_sink(sink)
+    attach_session_close_digest(
+        relay.session_manager,
+        LearningDigestor(learning_store, model()),
+        sink,
     )
     bind_background_task(relay)
     return relay

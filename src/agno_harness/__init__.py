@@ -80,6 +80,18 @@ from .helpers import (
     save_env_file,
 )
 from .knowledge import CjkKeywordScorer, KeywordKnowledge, MarkdownKnowledge
+from .learning import (
+    DoctorIssue,
+    DoctorReport,
+    LearningActor,
+    LearningChangeRecord,
+    LearningDigestor,
+    LearningStore,
+    LearningToolkit,
+    TopicCatalogEntry,
+    attach_session_close_digest,
+    resolve_learning_actor,
+)
 from .logging import (
     RelayConsoleFormatter,
     RelayJsonFormatter,
@@ -207,7 +219,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.3.5"
+__version__ = "0.3.12"
 
 
 def __getattr__(name: str) -> Any:
@@ -291,6 +303,8 @@ __all__ = [
     "register_harness_models",
     "table_name",
     "default_builder",
+    "DoctorIssue",
+    "DoctorReport",
     "EventParser",
     "EventSequencer",
     "EventTranslator",
@@ -305,6 +319,11 @@ __all__ = [
     "KeywordChimeInPolicy",
     "KeywordKnowledge",
     "LarkChannel",
+    "LearningActor",
+    "LearningChangeRecord",
+    "LearningDigestor",
+    "LearningStore",
+    "LearningToolkit",
     "LongRunManager",
     "MarkdownKnowledge",
     "MediaUrl",
@@ -398,6 +417,7 @@ __all__ = [
     "ThrottledStreamBuffer",
     "TodoToolkit",
     "ToolFilter",
+    "TopicCatalogEntry",
     "TransformResultFilter",
     "UserQueryBuilder",
     "WebChannel",
@@ -407,6 +427,7 @@ __all__ = [
     "apply_patch_block",
     "apply_search_replace",
     "attach_checkpoint_to_session",
+    "attach_session_close_digest",
     "close_dangling_tool_calls",
     "compression_events_parser",
     "emit_artifact",
@@ -428,6 +449,7 @@ __all__ = [
     "patch_artifact",
     "read_artifact_section",
     "reasoning_content_parser",
+    "resolve_learning_actor",
     "sanitize_reason",
     "seal_session_run",
     "setup_otlp",

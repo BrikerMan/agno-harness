@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.12
+
+### Added
+
+- **Standardized 3-layer continuous learning and living playbooks (`agno_harness.learning`).**
+  - `LearningStore` manages pure local-directory Markdown memory across three layers (`playbook.md` + newest-first `mistakes.md`, auto-cataloged `topics/*.md`, and RunContext-isolated `scopes/{users,groups}/*.md`), with self-describing `README.md` boundaries across every directory, dynamic per-turn `compose_instructions()` evaluation at `messages[0]`, immutable per-change audit snapshots under `audit/changes/`, `status: archived` tombstones on `revert()`, read-time corruption fallback, and `doctor()` self-healing.
+  - `LearningToolkit` exposes scoped read/search/write/patch, `record_mistake`, `update_preference`, `list_learnings`, `revert_learning`, and `repair_learning` tools while strictly hiding and blocking `scopes/` and `audit/` paths from file tools.
+  - `LearningDigestor` and `attach_session_close_digest` extract durable learnings (`NOOP`-first) from closed sessions, message audit sinks, or transcripts with idempotent cursor watermarks under `audit/cursors/`.
+  - `AgentRunner` forwards `scope.metadata` into `RunContext.metadata` and `QueryTurn.extras`; updated `agno-harness init` scaffold (`app/learning/`, `LearningStore`, `LearningDigestor`) and added bilingual docs (`docs/{en,zh}/02-interactions/09-learning-and-playbook.md`).
+
+### Fixed
+
+- **Unwrap `<user-query>` envelopes on replay and title extraction.** `extract_user_query` in `agno_harness.core.prompt` and `agno_harness.runtime.replay` strips the `<user-query>` / `<context>` wrapper so replayed messages and session titles keep clean user text.
+
+### Changed
+
+- Bump package version to `0.3.12`.
+
 ## 0.3.11
 
 ### Added

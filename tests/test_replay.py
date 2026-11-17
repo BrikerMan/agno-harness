@@ -494,6 +494,19 @@ class TestFramesRequireALog:
         frames = await runtime.threads.read_frames("t1")
         assert [f["event"]["type"] for f in frames] == ["RUN_STARTED"]
 
+    async def test_replay_unwraps_user_query_envelope(self):
+        wrapped = (
+            "<user-query>\n有哪些我需要关注的报警\n</user-query>\n\n"
+            '<context note="Reference only.">\n'
+            "  <time>2026-11-13 16:20:21 +0000</time>\n"
+            "  <user>eliyar@kino-ai.com</user>\n"
+            "</context>"
+        )
+        run = FakeRun(run_id="r1", input=FakeInput(input_content=wrapped), content="共 5 条")
+        msgs = run_to_messages(run)
+        assert msgs[0] == {"id": "u-r1", "role": "user", "content": "有哪些我需要关注的报警"}
+        assert session_title(FakeSession(session_id="t1", runs=[run])) == "有哪些我需要关注的报警"
+
 
 async def sql_event_log():
     """A durable log, which is what frame replay requires.

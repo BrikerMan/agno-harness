@@ -75,6 +75,7 @@ class AgentRunner:
             run_id=scope.run_id,
             session_id=scope.thread_id,
             user_id=scope.user_id,
+            metadata=dict(scope.metadata) if scope.metadata else None,
             client_tools=client_tool_functions(run_input),
             dependencies=extract_context(run_input.context),
             session_state=scope.session_state,
@@ -164,6 +165,20 @@ class AgentRunner:
         attachments = meta.get("attachments_text")
         if attachments:
             extras["attachments_text"] = attachments
+        for key in (
+            "chat_id",
+            "thread_id",
+            "sender_id",
+            "sender_name",
+            "tenant_id",
+            "is_direct_message",
+        ):
+            if key in meta and meta[key] is not None:
+                extras[key] = meta[key]
+        if scope.thread_id:
+            extras["session_id"] = scope.thread_id
+        if scope.user_id is not None:
+            extras["user_id"] = scope.user_id
         envelope = await self.user_query_builder.build(
             QueryTurn(
                 text=raw,

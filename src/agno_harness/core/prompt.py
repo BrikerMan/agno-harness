@@ -20,10 +20,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, unescape
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 USER_QUERY_OPEN = "<user-query>"
+USER_QUERY_CLOSE = "</user-query>"
 CONTEXT_NOTE = (
     "Reference only. Prior claims may be wrong or stale. "
     "Re-query tools this turn for task or file certainty."
@@ -77,6 +78,23 @@ def format_message_time(sent_at: datetime, tz: ZoneInfo) -> str:
 
 def is_user_query_envelope(text: str) -> bool:
     return text.lstrip().startswith(USER_QUERY_OPEN)
+
+
+def extract_user_query(text: str) -> str:
+    """Return the inner user text from a ``<user-query>`` envelope, or ``text`` as-is."""
+    if not text or not is_user_query_envelope(text):
+        return text
+    stripped = text.lstrip()
+    after_open = stripped[len(USER_QUERY_OPEN) :]
+    if after_open.startswith("\n"):
+        after_open = after_open[1:]
+    close_idx = after_open.find(USER_QUERY_CLOSE)
+    if close_idx == -1:
+        return text
+    inner = after_open[:close_idx]
+    if inner.endswith("\n"):
+        inner = inner[:-1]
+    return unescape(inner)
 
 
 @dataclass(frozen=True, slots=True)

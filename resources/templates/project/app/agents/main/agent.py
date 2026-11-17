@@ -10,15 +10,18 @@ This agent is the one on AgentRuntime.
 
 from pathlib import Path
 
+from agno_harness import LearningStore
 from app.agents.agent_builder import build as build_agent_builder
 from app.agents.assemble import assemble
 from app.agents.main.cards import CARD_CATALOG
 from app.agents.main.tools import TOOLS
 from app.agents.researcher.agent import build as build_researcher
-from app.paths import KNOWLEDGE
+from app.paths import KNOWLEDGE, LEARNING, SEED_LEARNING
 
 NAME = "Coordinator"
 _DIR = Path(__file__).resolve().parent
+
+learning_store = LearningStore(LEARNING, seed_dir=SEED_LEARNING, owner_agent="coordinator")
 
 
 def build(db):
@@ -31,5 +34,6 @@ def build(db):
         knowledge_dir=KNOWLEDGE,
         tools=list(TOOLS),
         specialists=[build_researcher(), build_agent_builder()],
+        learning=learning_store,
         db=db,
     )
