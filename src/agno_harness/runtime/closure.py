@@ -181,14 +181,7 @@ async def _persist_run_change(
     *,
     session_changed: bool = False,
 ) -> None:
-    """Persist an edited run (and optionally its session) on Agno v3 storage.
-
-    Agno v3 keeps runs in their own table and ``upsert_session`` no longer
-    rewrites them, so an edit to ``run.metadata`` / ``run.messages`` is lost
-    unless the run itself is upserted. Backends not yet ported raise
-    ``NotImplementedError`` from ``upsert_run``; those still persist runs inline
-    through ``upsert_session``.
-    """
+    """Persist an edited run (and optionally its session)."""
     upsert_run = getattr(db, "upsert_run", None)
     if callable(upsert_run):
         try:
@@ -206,6 +199,86 @@ async def _persist_run_change(
             await _upsert_db_session(db, session)
         return
     await _upsert_db_session(db, session)
+
+
+def _extract_first_task_prompt(session: AgentSession) -> str | None:
+    """Extract the initial user task prompt from the session's earliest run."""
+    for run in getattr(session, "runs", None) or []:
+        meta = getattr(run, "metadata", None) or {}
+        if isinstance(meta, dict) and meta.get("original_task_prompt"):
+            return str(meta["original_task_prompt"])
+        for msg in getattr(run, "messages", None) or []:
+            if getattr(msg, "role", None) == "user" and not getattr(msg, "from_history", False):
+                text = str(getattr(msg, "content", "") or "").strip()
+                if (
+                    text
+                    and not text.startswith("[Continuation]")
+                    and not text.startswith("[Context Checkpoint]")
+                ):
+                    return text
+        inp = getattr(run, "input", None)
+        if inp is not None:
+            raw = getattr(inp, "input_content", None) or (
+                inp.get("input_content") if isinstance(inp, dict) else str(inp)
+            )
+            text = str(raw or "").strip()
+            if text and not text.startswith("[Continuation]"):
+                return text
+    return None
+
+
+async def get_unfinished_task(db: Any, session_id: str) -> dict[str, str] | None:
+    """Return unfinished task state ``{'original_prompt': ..., 'written': ...}`` for an interrupted session.
+
+    Returns ``None`` if the session does not exist or its most recent run already completed.
+    """
+    if db is None or not session_id:
+        return None
+    session = await _get_db_session(db, session_id)
+    if session is None:
+        return None
+    runs = getattr(session, "runs", None) or []
+    if runs and getattr(runs[-1], "status", None) == RunStatus.completed:
+        return None
+
+    sdata = getattr(session, "session_data", None) or {}
+    saved = sdata.get("unfinished_task") if isinstance(sdata, dict) else None
+    original_prompt = ""
+    written = ""
+    if isinstance(saved, dict):
+        original_prompt = str(saved.get("original_prompt") or "")
+        written = str(saved.get("written") or "")
+
+    if not original_prompt:
+        original_prompt = _extract_first_task_prompt(session) or ""
+
+    if not written and runs:
+        for run in reversed(runs):
+            meta = getattr(run, "metadata", None) or {}
+            if isinstance(meta, dict) and meta.get("partial_written"):
+                written = str(meta["partial_written"])
+                break
+            content = str(getattr(run, "content", "") or "").strip()
+            if content and content != "Operation cancelled by user":
+                written = content
+                break
+
+    if not original_prompt and not written:
+        return None
+    return {"original_prompt": original_prompt, "written": written}
+
+
+async def clear_unfinished_task(db: Any, session_id: str) -> None:
+    """Clear any stored ``unfinished_task`` bookmark once a session finishes."""
+    if db is None or not session_id:
+        return
+    session = await _get_db_session(db, session_id)
+    if session is None:
+        return
+    sdata = getattr(session, "session_data", None)
+    if isinstance(sdata, dict) and "unfinished_task" in sdata:
+        sdata.pop("unfinished_task", None)
+        await _upsert_db_session(db, session)
 
 
 async def seal_session_run(
@@ -235,16 +308,10 @@ async def seal_session_run(
     if getattr(target_run, "metadata", None) is None:
         target_run.metadata = {}
 
-    if target_run.metadata is not None:
-        target_run.metadata["sealed"] = True
-        target_run.metadata["interrupted"] = True
-        target_run.metadata["interruption_reason"] = sanitize_reason(reason)
-        target_run.metadata["is_error"] = is_error
-        if extra_metadata:
-            target_run.metadata.update(extra_metadata)
-
     # Sync partial content to target_run.content if newer or missing
     current_content = getattr(target_run, "content", None) or ""
+    if current_content == "Operation cancelled by user":
+        current_content = ""
     if partial_content and (not current_content or len(partial_content) > len(current_content)):
         target_run.content = partial_content
         current_content = partial_content
@@ -253,6 +320,22 @@ async def seal_session_run(
 
     if target_run.messages is None:
         target_run.messages = []
+
+    # Check whether this run is a subsequent empty retry (no tools, no content)
+    raw_msgs = list(target_run.messages)
+    has_tools = bool(getattr(target_run, "tools", None)) or any(
+        getattr(m, "role", None) == "tool" or bool(getattr(m, "tool_calls", None)) for m in raw_msgs
+    )
+    is_first_run = len(getattr(session, "runs", None) or []) <= 1
+    should_seal = is_first_run or has_tools or bool(effective_content)
+
+    if target_run.metadata is not None:
+        target_run.metadata["sealed"] = should_seal
+        target_run.metadata["interrupted"] = True
+        target_run.metadata["interruption_reason"] = sanitize_reason(reason)
+        target_run.metadata["is_error"] = is_error
+        if extra_metadata:
+            target_run.metadata.update(extra_metadata)
 
     # 1. Close dangling tool calls
     target_run.messages = close_dangling_tool_calls(
@@ -315,13 +398,35 @@ async def seal_session_run(
                     ensure_ascii=False,
                 )
 
-    await _persist_run_change(db, session, target_run)
+    session_changed = False
+    orig_prompt = (extra_metadata or {}).get("original_task_prompt") or _extract_first_task_prompt(
+        session
+    )
+    if orig_prompt or effective_content:
+        if getattr(session, "session_data", None) is None:
+            session.session_data = {}
+        if isinstance(session.session_data, dict):
+            prev_unfinished = session.session_data.get("unfinished_task")
+            prev_orig = (
+                prev_unfinished.get("original_prompt") if isinstance(prev_unfinished, dict) else ""
+            )
+            prev_written = (
+                prev_unfinished.get("written") if isinstance(prev_unfinished, dict) else ""
+            )
+            session.session_data["unfinished_task"] = {
+                "original_prompt": str(orig_prompt or prev_orig or ""),
+                "written": str(effective_content or prev_written or ""),
+            }
+            session_changed = True
+
+    await _persist_run_change(db, session, target_run, session_changed=session_changed)
     logger.info(
-        "Successfully sealed run %s in session %s (reason: %s, content_len: %d)",
+        "Successfully sealed run %s in session %s (reason: %s, content_len: %d, sealed: %s)",
         getattr(target_run, "run_id", None),
         session_id,
         reason,
         len(effective_content),
+        should_seal,
     )
     return True
 
@@ -472,14 +577,6 @@ def install_sealed_history_hook() -> None:
     metadata, all prior runs are pruned from history, injecting the checkpoint
     as a system message and keeping only the checkpoint run's query/final answer
     plus subsequent runs.
-
-    Agno v3 ``get_messages(skip_statuses=...)`` filters by status for every run,
-    so passing ``skip_statuses=[]`` would also replay cancelled runs that were
-    never sealed. Flipping the status of sealed runs only (for the duration of
-    the call) keeps the selection per-run. Agno's own bounded history read
-    (``get_session_messages(last_n_runs=N)``) drops cancelled/error runs in SQL
-    before this hook sees them; the run pipeline loads the whole session, which
-    is the path this hook serves.
     """
     global _HOOK_INSTALLED
     if _HOOK_INSTALLED:
@@ -495,7 +592,9 @@ def install_sealed_history_hook() -> None:
         for r in runs:
             status = getattr(r, "status", None)
             meta = getattr(r, "metadata", None) or {}
-            is_sealed = bool(meta.get("sealed") or meta.get("interrupted"))
+            is_sealed = bool(
+                meta.get("sealed") or (meta.get("interrupted") and meta.get("sealed") is not False)
+            )
             if status in (RunStatus.cancelled, RunStatus.error) and is_sealed:
                 temp_restores.append((r, status))
                 r.status = RunStatus.completed

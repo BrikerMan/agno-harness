@@ -722,3 +722,71 @@ async def test_checkpoint_skips_inline_checkpoint_msg_and_persists_on_error():
         == "[Context Checkpoint]\n# CONTEXT CHECKPOINT\nNewer summary including run-1"
     )
     assert msgs2[1].content == "Understood. I have recorded the context checkpoint."
+
+
+async def test_empty_retry_runs_do_not_pollute_sealed_history():
+    """Verify that a subsequent retry run that stalls with 0 tools and 0 content is not sealed into history."""
+    install_sealed_history_hook()
+    db = InMemoryDb()
+    session_id = "test-empty-retry"
+
+    run1 = RunOutput(
+        run_id="run-1",
+        agent_id="sub-agent",
+        session_id=session_id,
+        status=RunStatus.cancelled,
+        messages=[
+            Message(role="user", content="Original task: evaluate 18 IPs (TMNT, Godzilla)"),
+            Message(
+                role="assistant",
+                content="Fetching...",
+                tool_calls=[{"id": "c1", "function": {"name": "batch_search_ips"}}],
+            ),
+            Message(role="tool", tool_call_id="c1", content="[{'id': 3, 'name': 'TMNT'}]"),
+        ],
+    )
+    session = AgentSession(session_id=session_id, runs=[run1])
+    db.upsert_session(session)
+
+    await seal_session_run(
+        db=db,
+        session_id=session_id,
+        run_id="run-1",
+        reason="Timed out after tools",
+        partial_content="Fetched batch 1.",
+    )
+
+    loaded = db.get_session(session_id=session_id)
+    assert loaded is not None
+    run2 = RunOutput(
+        run_id="run-2",
+        agent_id="sub-agent",
+        session_id=session_id,
+        status=RunStatus.cancelled,
+        content="Operation cancelled by user",
+        messages=[
+            Message(role="user", content="[Continuation] Continue task"),
+        ],
+    )
+    loaded.runs.append(run2)
+    if hasattr(db, "upsert_run"):
+        db.upsert_run(run2, session_id=session_id)
+    else:
+        db.upsert_session(loaded)
+
+    await seal_session_run(
+        db=db,
+        session_id=session_id,
+        run_id="run-2",
+        reason="Timed out waiting for first token",
+        partial_content=None,
+    )
+
+    final_sess = db.get_session(session_id=session_id)
+    assert final_sess is not None
+    assert final_sess.runs[0].metadata["sealed"] is True
+    assert final_sess.runs[1].metadata["sealed"] is False
+
+    history = final_sess.get_messages()
+    user_contents = [m.content for m in history if m.role == "user"]
+    assert user_contents == ["Original task: evaluate 18 IPs (TMNT, Godzilla)"]
