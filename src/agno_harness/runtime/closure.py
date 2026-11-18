@@ -26,6 +26,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -135,6 +136,151 @@ async def _upsert_db_session(db: Any, session: AgentSession) -> Any:
     return res
 
 
+#: Pauses between reads while waiting for Agno to flush an interrupted run.
+_RUN_FLUSH_BACKOFF = (0.05, 0.15, 0.3)
+
+
+async def _find_run_with_grace(
+    db: Any, session_id: str, run_id: str | None
+) -> tuple[AgentSession | None, Any]:
+    """Load the session and the run to seal.
+
+    On cancel or error Agno writes the interrupted run from its own cleanup
+    path, which can land after the harness starts sealing. When ``run_id`` is
+    known but not stored yet, re-read a few times before falling back to the
+    most recent run (the previous behaviour).
+    """
+    attempts = len(_RUN_FLUSH_BACKOFF) + 1 if run_id else 1
+    session: AgentSession | None = None
+    for attempt in range(attempts):
+        session = await _get_db_session(db, session_id)
+        runs = getattr(session, "runs", None) if session else None
+        if runs:
+            if not run_id:
+                return session, runs[-1]
+            found = next((r for r in runs if getattr(r, "run_id", None) == run_id), None)
+            if found is not None:
+                return session, found
+        if attempt < attempts - 1:
+            await asyncio.sleep(_RUN_FLUSH_BACKOFF[attempt])
+    runs = getattr(session, "runs", None) if session else None
+    if not runs:
+        return session, None
+    logger.warning(
+        "run %s not stored in session %s after waiting; sealing the latest run instead",
+        run_id,
+        session_id,
+    )
+    return session, runs[-1]
+
+
+async def _persist_run_change(
+    db: Any,
+    session: AgentSession,
+    run: Any,
+    *,
+    session_changed: bool = False,
+) -> None:
+    """Persist an edited run (and optionally its session)."""
+    upsert_run = getattr(db, "upsert_run", None)
+    if callable(upsert_run):
+        try:
+            res = upsert_run(
+                run,
+                session_id=session.session_id,
+                user_id=getattr(session, "user_id", None),
+            )
+            if inspect.isawaitable(res):
+                await res
+        except NotImplementedError:
+            await _upsert_db_session(db, session)
+            return
+        if session_changed:
+            await _upsert_db_session(db, session)
+        return
+    await _upsert_db_session(db, session)
+
+
+def _extract_first_task_prompt(session: AgentSession) -> str | None:
+    """Extract the initial user task prompt from the session's earliest run."""
+    for run in getattr(session, "runs", None) or []:
+        meta = getattr(run, "metadata", None) or {}
+        if isinstance(meta, dict) and meta.get("original_task_prompt"):
+            return str(meta["original_task_prompt"])
+        for msg in getattr(run, "messages", None) or []:
+            if getattr(msg, "role", None) == "user" and not getattr(msg, "from_history", False):
+                text = str(getattr(msg, "content", "") or "").strip()
+                if (
+                    text
+                    and not text.startswith("[Continuation]")
+                    and not text.startswith("[Context Checkpoint]")
+                ):
+                    return text
+        inp = getattr(run, "input", None)
+        if inp is not None:
+            raw = getattr(inp, "input_content", None) or (
+                inp.get("input_content") if isinstance(inp, dict) else str(inp)
+            )
+            text = str(raw or "").strip()
+            if text and not text.startswith("[Continuation]"):
+                return text
+    return None
+
+
+async def get_unfinished_task(db: Any, session_id: str) -> dict[str, str] | None:
+    """Return unfinished task state ``{'original_prompt': ..., 'written': ...}`` for an interrupted session.
+
+    Returns ``None`` if the session does not exist or its most recent run already completed.
+    """
+    if db is None or not session_id:
+        return None
+    session = await _get_db_session(db, session_id)
+    if session is None:
+        return None
+    runs = getattr(session, "runs", None) or []
+    if runs and getattr(runs[-1], "status", None) == RunStatus.completed:
+        return None
+
+    sdata = getattr(session, "session_data", None) or {}
+    saved = sdata.get("unfinished_task") if isinstance(sdata, dict) else None
+    original_prompt = ""
+    written = ""
+    if isinstance(saved, dict):
+        original_prompt = str(saved.get("original_prompt") or "")
+        written = str(saved.get("written") or "")
+
+    if not original_prompt:
+        original_prompt = _extract_first_task_prompt(session) or ""
+
+    if not written and runs:
+        for run in reversed(runs):
+            meta = getattr(run, "metadata", None) or {}
+            if isinstance(meta, dict) and meta.get("partial_written"):
+                written = str(meta["partial_written"])
+                break
+            content = str(getattr(run, "content", "") or "").strip()
+            if content and content != "Operation cancelled by user":
+                written = content
+                break
+
+    if not original_prompt and not written:
+        return None
+    return {"original_prompt": original_prompt, "written": written}
+
+
+async def clear_unfinished_task(db: Any, session_id: str) -> None:
+    """Clear any stored ``unfinished_task`` bookmark once a session finishes."""
+    if db is None or not session_id:
+        return
+    session = await _get_db_session(db, session_id)
+    if session is None:
+        return
+    sdata = getattr(session, "session_data", None)
+    if isinstance(sdata, dict) and "unfinished_task" in sdata:
+        sdata.pop("unfinished_task", None)
+        await _upsert_db_session(db, session)
+
+
 async def seal_session_run(
     db: Any,
     session_id: str,
@@ -155,29 +301,17 @@ async def seal_session_run(
     if db is None or not session_id:
         return False
 
-    session = await _get_db_session(db, session_id)
-    if not session or not session.runs:
+    session, target_run = await _find_run_with_grace(db, session_id, run_id)
+    if session is None or target_run is None:
         return False
-
-    target_run = None
-    if run_id:
-        target_run = next((r for r in session.runs if getattr(r, "run_id", None) == run_id), None)
-    if target_run is None:
-        target_run = session.runs[-1]
 
     if getattr(target_run, "metadata", None) is None:
         target_run.metadata = {}
 
-    if target_run.metadata is not None:
-        target_run.metadata["sealed"] = True
-        target_run.metadata["interrupted"] = True
-        target_run.metadata["interruption_reason"] = sanitize_reason(reason)
-        target_run.metadata["is_error"] = is_error
-        if extra_metadata:
-            target_run.metadata.update(extra_metadata)
-
     # Sync partial content to target_run.content if newer or missing
     current_content = getattr(target_run, "content", None) or ""
+    if current_content == "Operation cancelled by user":
+        current_content = ""
     if partial_content and (not current_content or len(partial_content) > len(current_content)):
         target_run.content = partial_content
         current_content = partial_content
@@ -186,6 +320,22 @@ async def seal_session_run(
 
     if target_run.messages is None:
         target_run.messages = []
+
+    # Check whether this run is a subsequent empty retry (no tools, no content)
+    raw_msgs = list(target_run.messages)
+    has_tools = bool(getattr(target_run, "tools", None)) or any(
+        getattr(m, "role", None) == "tool" or bool(getattr(m, "tool_calls", None)) for m in raw_msgs
+    )
+    is_first_run = len(getattr(session, "runs", None) or []) <= 1
+    should_seal = is_first_run or has_tools or bool(effective_content)
+
+    if target_run.metadata is not None:
+        target_run.metadata["sealed"] = should_seal
+        target_run.metadata["interrupted"] = True
+        target_run.metadata["interruption_reason"] = sanitize_reason(reason)
+        target_run.metadata["is_error"] = is_error
+        if extra_metadata:
+            target_run.metadata.update(extra_metadata)
 
     # 1. Close dangling tool calls
     target_run.messages = close_dangling_tool_calls(
@@ -248,13 +398,35 @@ async def seal_session_run(
                     ensure_ascii=False,
                 )
 
-    await _upsert_db_session(db, session)
+    session_changed = False
+    orig_prompt = (extra_metadata or {}).get("original_task_prompt") or _extract_first_task_prompt(
+        session
+    )
+    if orig_prompt or effective_content:
+        if getattr(session, "session_data", None) is None:
+            session.session_data = {}
+        if isinstance(session.session_data, dict):
+            prev_unfinished = session.session_data.get("unfinished_task")
+            prev_orig = (
+                prev_unfinished.get("original_prompt") if isinstance(prev_unfinished, dict) else ""
+            )
+            prev_written = (
+                prev_unfinished.get("written") if isinstance(prev_unfinished, dict) else ""
+            )
+            session.session_data["unfinished_task"] = {
+                "original_prompt": str(orig_prompt or prev_orig or ""),
+                "written": str(effective_content or prev_written or ""),
+            }
+            session_changed = True
+
+    await _persist_run_change(db, session, target_run, session_changed=session_changed)
     logger.info(
-        "Successfully sealed run %s in session %s (reason: %s, content_len: %d)",
+        "Successfully sealed run %s in session %s (reason: %s, content_len: %d, sealed: %s)",
         getattr(target_run, "run_id", None),
         session_id,
         reason,
         len(effective_content),
+        should_seal,
     )
     return True
 
@@ -366,13 +538,10 @@ async def attach_checkpoint_to_session(
     if db is None or not session_id or not checkpoint_data:
         return False
 
-    session = await _get_db_session(db, session_id)
+    session, target_run = await _find_run_with_grace(db, session_id, run_id)
     if not session or not session.runs:
         return False
 
-    target_run = None
-    if run_id:
-        target_run = next((r for r in session.runs if getattr(r, "run_id", None) == run_id), None)
     if target_run is None:
         target_run = session.runs[-1]
 
@@ -388,7 +557,7 @@ async def attach_checkpoint_to_session(
         session.session_data["latest_checkpoint"] = checkpoint_data
         session.session_data["latest_checkpoint_run_id"] = getattr(target_run, "run_id", None)
 
-    await _upsert_db_session(db, session)
+    await _persist_run_change(db, session, target_run, session_changed=True)
     logger.info(
         "Attached checkpoint to run %s in session %s (%d chars)",
         getattr(target_run, "run_id", None),
@@ -423,7 +592,9 @@ def install_sealed_history_hook() -> None:
         for r in runs:
             status = getattr(r, "status", None)
             meta = getattr(r, "metadata", None) or {}
-            is_sealed = bool(meta.get("sealed") or meta.get("interrupted"))
+            is_sealed = bool(
+                meta.get("sealed") or (meta.get("interrupted") and meta.get("sealed") is not False)
+            )
             if status in (RunStatus.cancelled, RunStatus.error) and is_sealed:
                 temp_restores.append((r, status))
                 r.status = RunStatus.completed
@@ -492,29 +663,52 @@ def install_sealed_history_hook() -> None:
             )
 
             # 2. Checkpoint run's user prompt and final assistant response
-            cp_run_msgs = getattr(cp_run, "messages", None) or []
-            user_msg = next((m for m in cp_run_msgs if getattr(m, "role", None) == "user"), None)
-            if user_msg:
-                result_messages.append(
-                    Message(
-                        role="user",
-                        content=user_msg.content,
-                        from_history=True,
-                    )
+            # Only include the checkpoint run's own turn when it completed (or was sealed,
+            # which flips its status to completed above). Skip synthetic [Context Checkpoint]
+            # messages that may sit at the front of cp_run.messages.
+            if getattr(cp_run, "status", None) == RunStatus.completed:
+                cp_run_msgs = getattr(cp_run, "messages", None) or []
+                user_msg = next(
+                    (
+                        m
+                        for m in cp_run_msgs
+                        if getattr(m, "role", None) == "user"
+                        and getattr(m, "name", None) != "context_checkpoint"
+                        and not str(getattr(m, "content", "") or "").startswith(
+                            "[Context Checkpoint]"
+                        )
+                    ),
+                    None,
                 )
+                if user_msg:
+                    result_messages.append(
+                        Message(
+                            role="user",
+                            content=user_msg.content,
+                            from_history=True,
+                        )
+                    )
 
-            final_asst = next(
-                (m for m in reversed(cp_run_msgs) if getattr(m, "role", None) == "assistant"), None
-            )
-            if final_asst:
-                cleaned_asst = strip_stream_ui(final_asst.content)
-                result_messages.append(
-                    Message(
-                        role="assistant",
-                        content=cleaned_asst if cleaned_asst else "[Rendered UI Component]",
-                        from_history=True,
-                    )
+                final_asst = next(
+                    (
+                        m
+                        for m in reversed(cp_run_msgs)
+                        if getattr(m, "role", None) == "assistant"
+                        and getattr(m, "name", None) != "context_checkpoint_ack"
+                        and str(getattr(m, "content", "") or "")
+                        != "Understood. I have recorded the context checkpoint."
+                    ),
+                    None,
                 )
+                if final_asst:
+                    cleaned_asst = strip_stream_ui(final_asst.content)
+                    result_messages.append(
+                        Message(
+                            role="assistant",
+                            content=cleaned_asst if cleaned_asst else "[Rendered UI Component]",
+                            from_history=True,
+                        )
+                    )
 
             # 3. Subsequent runs after the checkpoint run
             subsequent_runs = runs[checkpoint_idx + 1 :]

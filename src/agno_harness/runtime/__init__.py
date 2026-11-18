@@ -17,7 +17,9 @@ picture.
 
 from .closure import (
     attach_checkpoint_to_session,
+    clear_unfinished_task,
     close_dangling_tool_calls,
+    get_unfinished_task,
     install_sealed_history_hook,
     sanitize_reason,
     seal_session_run,
@@ -123,8 +125,10 @@ __all__ = [
     "substream",
     "ui_block",
     "attach_checkpoint_to_session",
+    "clear_unfinished_task",
     "close_dangling_tool_calls",
     "compression_events_parser",
+    "get_unfinished_task",
     "install_sealed_history_hook",
     "sanitize_reason",
     "seal_session_run",

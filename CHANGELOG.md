@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.9
+
+### Fixed
+
+- **Install `install_sealed_history_hook()` automatically across runtime, checkpoint hook, and `SubAgentToolkit`.** `agno_harness`, `AgentRuntime.__init__`, `make_checkpoint_hook`, and `SubAgentToolkit.__init__` now install `_sealed_aware_get_messages` on `AgentSession.get_messages` automatically without requiring legacy `compat.py` imports.
+- **Seal interrupted sub-agent runs and preserve original task prompt across retries and multi-turn resumes.**
+  - `SubAgentToolkit` now calls `seal_session_run()` whenever a sub-agent stream times out or errors out, closing dangling tool calls, persisting `unfinished_task` state (`original_prompt` + `written`), and enabling `add_history_to_context=True` on retry (`attempt > 1`) as well as cross-turn resume (`session_id`).
+  - `build_continuation_prompt()`, `safe_cut()`, `save_partial_state()`, `load_partial_state()`, and `clear_partial_state()` preserve the first turn's `ORIGINAL TASK` when a subsequent turn resumes with a short follow-up prompt (such as "continue") and enforce strict anti-hallucination guardrails so truncated runs never substitute or guess missing target entities.
+  - `seal_session_run()` skips marking empty retry attempts (zero tools and zero content) as `sealed=True` so repeated timeouts do not pollute conversation history.
+
+### Changed
+
+- Bump package version to `0.2.9`.
+
 ## 0.2.8
 
 ### Added
