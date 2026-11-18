@@ -300,3 +300,15 @@ def test_workspace_write_tools_respect_the_credential_guard(tmp_path: Path):
     )
     assert (ws / ".env").read_text() == "API_KEY=sk-secret\n"
     assert "Successfully" in tk.write_file(path="out.md", content="ok")
+
+
+def test_workspace_toolkit_function_schemas_preserve_parameters(tmp_path: Path) -> None:
+    tk = WorkspaceToolkit(workspace_dir=tmp_path, allow_write=True)
+    for fn in tk.functions.values():
+        fn.process_entrypoint(strict=False)
+
+    assert "path" in tk.functions["read"].parameters["properties"]
+    assert "pattern" in tk.functions["grep"].parameters["properties"]
+    assert "pattern" in tk.functions["glob"].parameters["properties"]
+    assert "content" in tk.functions["write_file"].parameters["properties"]
+    assert "search_block" in tk.functions["patch_file"].parameters["properties"]

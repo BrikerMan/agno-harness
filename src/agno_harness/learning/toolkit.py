@@ -5,15 +5,13 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, cast
 
+from agno.run import RunContext
 from agno.tools.toolkit import Toolkit
 
 from .models import LearningLayer, resolve_learning_actor
 from .store import LearningStore
-
-if TYPE_CHECKING:
-    from agno.run import RunContext
 
 _VALID_LAYERS: frozenset[str] = frozenset(
     {"playbook", "mistakes", "topic", "user_scope", "group_scope", "system"}

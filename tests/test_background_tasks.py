@@ -329,3 +329,16 @@ async def test_store_roundtrip_on_sqlite_url_and_postgres(tmp_path) -> None:
                 names = await conn.run_sync(lambda sync: set(inspect(sync).get_table_names()))
             assert "agno_harness_background_tasks" in names
             assert "moradin_background_tasks" not in names
+
+
+def test_background_task_toolkit_params_schema_allows_object_properties(tmp_path) -> None:
+    service = BackgroundTaskService(str(tmp_path / "agent.db"))
+    tk = BackgroundTaskToolkit(service)
+    fn = tk.async_functions["create_task"]
+    fn.process_entrypoint(strict=False)
+    params_schema = fn.parameters["properties"]["params"]
+    variants = params_schema.get("anyOf") or [params_schema]
+    object_variants = [v for v in variants if v.get("type") == "object"]
+    assert object_variants
+    for obj in object_variants:
+        assert obj.get("additionalProperties") is not False

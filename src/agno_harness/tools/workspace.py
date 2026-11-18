@@ -20,15 +20,13 @@ import re
 from collections.abc import Callable, Sequence
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from agno.run import RunContext
 from agno.tools.toolkit import Toolkit
 
 from ..runtime.modules.streamui import resolve_artifact_dir
 from ..runtime.scope import RunScope, current_scope
-
-if TYPE_CHECKING:
-    from agno.run import RunContext
 
 logger = logging.getLogger(__name__)
 

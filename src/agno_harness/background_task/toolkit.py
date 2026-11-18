@@ -38,7 +38,7 @@ class BackgroundTaskToolkit(Toolkit):
         self,
         task_type: str,
         subject: str,
-        params: dict[str, Any] | str | None = None,
+        params: dict | str | None = None,
     ) -> str:
         """Create a background task and return immediately.
 
@@ -73,7 +73,7 @@ class BackgroundTaskToolkit(Toolkit):
         )
 
 
-def _params(params: dict[str, Any] | str | None) -> dict[str, Any] | str:
+def _params(params: dict | str | None) -> dict[str, Any] | str:
     if params is None:
         return {}
     if isinstance(params, str):

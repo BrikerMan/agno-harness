@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.13
+
+### Fixed
+
+- **Expose `RunContext` at runtime for `LearningToolkit` and `WorkspaceToolkit` tool schemas.** Moved `from agno.run import RunContext` out of `if TYPE_CHECKING:` to top-level runtime imports in `agno_harness.learning.toolkit` and `agno_harness.tools.workspace` so Agno's `typing.get_type_hints()` generates full parameter schemas instead of empty `properties: {}`.
+- **Relax `BackgroundTaskToolkit.create_task` `params` schema.** Changed `params` type annotation from `dict[str, Any] | str | None` to `dict | str | None` in `agno_harness.background_task.toolkit` so JSON schema permits arbitrary key/value pairs in `params`.
+
+### Changed
+
+- Bump package version to `0.3.13`.
+
 ## 0.3.12
 
 ### Added

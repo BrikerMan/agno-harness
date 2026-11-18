@@ -219,7 +219,7 @@ from .tools import (
     todo_write,
 )
 
-__version__ = "0.3.12"
+__version__ = "0.3.13"
 
 
 def __getattr__(name: str) -> Any:

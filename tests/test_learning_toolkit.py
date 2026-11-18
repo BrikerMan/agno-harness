@@ -144,3 +144,16 @@ def test_init_copies_learning_seeds_and_preserves_edits(tmp_path: Path) -> None:
     assert (tmp_path / "data" / "learning" / "topics" / "glossary.md").read_text(
         encoding="utf-8"
     ) == "# Glossary\n"
+
+
+def test_learning_toolkit_function_schemas_preserve_parameters(tmp_path: Path) -> None:
+    store = LearningStore(tmp_path / "learning")
+    tk = LearningToolkit(store)
+    for fn in tk.functions.values():
+        fn.process_entrypoint(strict=False)
+
+    assert "path" in tk.functions["read"].parameters["properties"]
+    assert "pattern" in tk.functions["grep"].parameters["properties"]
+    assert "rule" in tk.functions["record_mistake"].parameters["properties"]
+    assert "search_block" in tk.functions["patch_file"].parameters["properties"]
+    assert "scope" in tk.functions["update_preference"].parameters["properties"]
