@@ -34,7 +34,7 @@ from .todo import (
     parse_todo_list,
     todo_write,
 )
-from .workspace import WorkspaceToolkit
+from .workspace import WorkspaceMount, WorkspaceToolkit
 
 __all__ = [
     "ArtifactCard",
@@ -53,6 +53,7 @@ __all__ = [
     "SubAgentToolkit",
     "TODO_MARKERS",
     "TodoToolkit",
+    "WorkspaceMount",
     "WorkspaceToolkit",
     "append_artifact",
     "apply_patch_block",

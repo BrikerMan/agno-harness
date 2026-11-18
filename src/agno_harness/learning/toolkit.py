@@ -26,6 +26,7 @@ class LearningToolkit(Toolkit):
         store: LearningStore | Callable[[], LearningStore],
         *,
         allow_write: bool = True,
+        include_file_tools: bool = True,
         max_entries: int = 100,
         max_matches: int = 50,
         name: str = "learning",
@@ -35,6 +36,7 @@ class LearningToolkit(Toolkit):
     ) -> None:
         self._store_or_factory = store
         self.allow_write = allow_write
+        self.include_file_tools = include_file_tools
         self.max_entries = max_entries
         self.max_matches = max_matches
 
@@ -46,15 +48,17 @@ class LearningToolkit(Toolkit):
             **toolkit_kwargs,
         )
 
-        self.register(self.read, name="read")
-        self.register(self.grep, name="grep")
-        self.register(self.list_files, name="list_files")
+        if self.include_file_tools:
+            self.register(self.read, name="read")
+            self.register(self.grep, name="grep")
+            self.register(self.list_files, name="list_files")
         self.register(self.list_learnings, name="list_learnings")
 
         if self.allow_write:
             self.register(self.record_mistake, name="record_mistake")
-            self.register(self.patch_file, name="patch_file")
-            self.register(self.write_file, name="write_file")
+            if self.include_file_tools:
+                self.register(self.patch_file, name="patch_file")
+                self.register(self.write_file, name="write_file")
             self.register(self.update_preference, name="update_preference")
             self.register(self.revert_learning, name="revert_learning")
             self.register(self.repair_learning, name="repair_learning")

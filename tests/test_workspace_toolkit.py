@@ -6,7 +6,7 @@ from pathlib import Path
 
 from agno_harness.runtime.scope import bind_scope
 from agno_harness.runtime.translator import make_run_scope
-from agno_harness.tools.workspace import WorkspaceToolkit
+from agno_harness.tools.workspace import WorkspaceMount, WorkspaceToolkit
 
 
 def test_workspace_toolkit_initialization():
@@ -17,6 +17,7 @@ def test_workspace_toolkit_initialization():
         "grep",
         "list_files",
         "list_artifacts",
+        "diff_files",
     }
     assert "File modification tools are disabled" in str(toolkit_ro.instructions)
 
@@ -27,6 +28,7 @@ def test_workspace_toolkit_initialization():
         "grep",
         "list_files",
         "list_artifacts",
+        "diff_files",
         "write_file",
         "patch_file",
     }
@@ -312,3 +314,98 @@ def test_workspace_toolkit_function_schemas_preserve_parameters(tmp_path: Path) 
     assert "pattern" in tk.functions["glob"].parameters["properties"]
     assert "content" in tk.functions["write_file"].parameters["properties"]
     assert "search_block" in tk.functions["patch_file"].parameters["properties"]
+
+
+def test_workspace_multi_mounts_permissions_aliases_handlers_and_diff(tmp_path: Path) -> None:
+    articles_dir = tmp_path / "articles"
+    (articles_dir / "605").mkdir(parents=True)
+    (articles_dir / "605" / "article.en.md").write_text("# Draft EN\nOld line.\n", encoding="utf-8")
+
+    playbook_dir = tmp_path / "playbook"
+    (playbook_dir / "glossaries").mkdir(parents=True)
+    (playbook_dir / "scopes").mkdir(parents=True)
+    (playbook_dir / "playbook.md").write_text("# Playbook\nRule 1.\n", encoding="utf-8")
+    (playbook_dir / "glossaries" / "games.md").write_text("Top Heroes -> 消消英雄\n", encoding="utf-8")
+    (playbook_dir / "scopes" / "secret.md").write_text("Private note\n", encoding="utf-8")
+
+    handler_calls: list[tuple[str, str, str]] = []
+
+    def playbook_patch(
+        rel: str, search_block: str, replace_block: str, reason: str, _ctx: object
+    ) -> str:
+        target = playbook_dir / rel
+        text = target.read_text(encoding="utf-8")
+        target.write_text(text.replace(search_block, replace_block, 1), encoding="utf-8")
+        handler_calls.append(("patch", rel, reason))
+        return f"Audited patch '{rel}' (reason={reason})"
+
+    mounts_ro_playbook = (
+        WorkspaceMount(
+            prefix="articles",
+            root=articles_dir,
+            allow_write=True,
+            description="Draft articles",
+        ),
+        WorkspaceMount(
+            prefix="playbook",
+            root=playbook_dir,
+            allow_write=False,
+            aliases=("playbook.md", "glossaries"),
+            is_path_blocked=lambda rel: rel.startswith("scopes/"),
+            description="Playbook & glossaries",
+        ),
+    )
+    tk_writer = WorkspaceToolkit(mounts=mounts_ro_playbook, default_mount="articles")
+
+    # Root listing shows both mounts and permissions
+    root_listing = tk_writer.read("")
+    assert "[rw] articles/" in root_listing
+    assert "[ro] playbook/" in root_listing
+
+    # Alias and default_mount resolution
+    assert "Top Heroes" in tk_writer.read("glossaries/games.md")
+    assert "Top Heroes" in tk_writer.read("playbook/glossaries/games.md")
+    assert "Draft EN" in tk_writer.read("605/article.en.md")
+    assert "Draft EN" in tk_writer.read("articles/605/article.en.md")
+
+    # Internal path guard in mount
+    assert "Security error" in tk_writer.read("playbook/scopes/secret.md")
+    assert "Private note" not in tk_writer.grep("Private")
+
+    # Cross-mount grep & list_files
+    assert "playbook/glossaries/games.md" in tk_writer.grep("消消英雄")
+    assert "articles/605/article.en.md" in tk_writer.list_files()
+    assert "playbook/glossaries/games.md" in tk_writer.list_files("glossaries/*.md")
+
+    # Read-only mount rejects writes while rw mount allows patch + diff_files
+    ro_err = tk_writer.patch_file("playbook/playbook.md", "Rule 1.", "Hacked")
+    assert "read-only" in ro_err
+    assert "Successfully patched" in tk_writer.patch_file(
+        "605/article.en.md", "Old line.", "New line."
+    )
+    assert "Successfully wrote" in tk_writer.write_file(
+        "articles/605/v1.en.md", "# Draft EN\nOld line.\n"
+    )
+    diff_out = tk_writer.diff_files("articles/605/v1.en.md", "605/article.en.md")
+    assert "-Old line." in diff_out
+    assert "+New line." in diff_out
+
+    # Read-write playbook mount delegates to custom handler with reason
+    tk_admin = WorkspaceToolkit(
+        mounts=(
+            mounts_ro_playbook[0],
+            WorkspaceMount(
+                prefix="playbook",
+                root=playbook_dir,
+                allow_write=True,
+                aliases=("playbook.md", "glossaries"),
+                patch_handler=playbook_patch,
+            ),
+        ),
+        default_mount="articles",
+    )
+    audited = tk_admin.patch_file(
+        "glossaries/games.md", "消消英雄", "消消英雄 (Verified)", reason="Team fix"
+    )
+    assert "Audited patch 'glossaries/games.md'" in audited
+    assert handler_calls == [("patch", "glossaries/games.md", "Team fix")]

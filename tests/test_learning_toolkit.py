@@ -157,3 +157,18 @@ def test_learning_toolkit_function_schemas_preserve_parameters(tmp_path: Path) -
     assert "rule" in tk.functions["record_mistake"].parameters["properties"]
     assert "search_block" in tk.functions["patch_file"].parameters["properties"]
     assert "scope" in tk.functions["update_preference"].parameters["properties"]
+
+
+def test_learning_toolkit_without_file_tools(tmp_path: Path) -> None:
+    store = LearningStore(tmp_path / "learning", owner_agent="moradin")
+    tk = LearningToolkit(store, allow_write=True, include_file_tools=False)
+    assert set(tk.functions.keys()) == {
+        "list_learnings",
+        "record_mistake",
+        "update_preference",
+        "revert_learning",
+        "repair_learning",
+    }
+    ctx = _ctx()
+    assert "Recorded mistake" in tk.record_mistake("No em dashes", reason="Style", run_context=ctx)
+    assert "No em dashes" in store.read_text("mistakes.md")
