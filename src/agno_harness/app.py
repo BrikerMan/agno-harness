@@ -3,6 +3,7 @@ import base64
 import contextlib
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from datetime import UTC, datetime
@@ -529,8 +530,9 @@ class RelayApp:
                 )
                 return None
 
-        # 3. Handle session-level control commands (/reset, /new)
-        if text.lower() in ("/reset", "/new", "/clear"):
+        # 3. Handle session-level control commands (/reset, /new), including after an @mention in group chats
+        cmd_text = re.sub(r"^(?:<at[^>]*>.*?</at>\s*|@\S+\s*)+", "", text, flags=re.IGNORECASE).strip()
+        if cmd_text.lower() in ("/reset", "/new", "/clear"):
             await self.session_manager.close_session(key, reason="user_command")
             outbound = OutboundMessage(
                 text="Conversation context has been cleared. Starting fresh!"

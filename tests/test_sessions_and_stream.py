@@ -223,6 +223,63 @@ def test_final_reply_drops_text_written_before_a_tool_call():
     assert "Let me gather facts" in kept and "October 20" in kept
 
 
+@pytest.mark.asyncio
+async def test_fallback_model_reset_discards_aborted_primary_stream():
+    from types import SimpleNamespace
+
+    from agno_harness.runtime.translator import EventTranslator, make_run_scope
+
+    scope = make_run_scope(thread_id="t1", run_id="r1")
+    translator = EventTranslator(scope=scope)
+    collector = MessageCollector(platform="teams")
+
+    async for ev in translator.start():
+        collector.feed(ev)
+
+    # Primary model starts and streams text, then times out before ModelRequestCompleted
+    async for ev in translator.feed(SimpleNamespace(event="ModelRequestStarted")):
+        collector.feed(ev)
+    async for ev in translator.feed(
+        SimpleNamespace(event="RunContent", content="Ready for a new article — I just need the brief.")
+    ):
+        collector.feed(ev)
+
+    # Fallback model starts a fresh request without ModelRequestCompleted on the primary
+    async for ev in translator.feed(SimpleNamespace(event="ModelRequestStarted")):
+        collector.feed(ev)
+    async for ev in translator.feed(
+        SimpleNamespace(event="RunContent", content="Hi Eliyar — what's the new article about?")
+    ):
+        collector.feed(ev)
+    async for ev in translator.feed(SimpleNamespace(event="ModelRequestCompleted")):
+        collector.feed(ev)
+    async for ev in translator.finish():
+        collector.feed(ev)
+
+    assert collector.finalize().text == "Hi Eliyar — what's the new article about?"
+    assert translator.accumulated_text == "Hi Eliyar — what's the new article about?"
+
+
+def test_subagent_stream_text_does_not_leak_into_parent_collector():
+    from ag_ui.core import ToolCallStartEvent
+
+    collector = MessageCollector(platform="teams")
+    collector.feed(
+        ToolCallStartEvent(
+            tool_call_id="t1", tool_call_name="delegate_subagent", parent_message_id="m1"
+        )
+    )
+    collector.feed(CustomEvent(name="subagent.start", value={"name": "SiteStats", "subRunId": "s1"}))
+    collector.feed(
+        TextMessageContentEvent(message_id="sub-m1", delta="SiteStats internal stream answer. ")
+    )
+    collector.feed(CustomEvent(name="subagent.end", value={"name": "SiteStats", "subRunId": "s1"}))
+    collector.feed(
+        TextMessageContentEvent(message_id="m2", delta="Parent relayed answer once.")
+    )
+    assert collector.finalize().text == "Parent relayed answer once."
+
+
 class NoteBlock(BlockSchema):
     schema_name = "note"
     body = "text"

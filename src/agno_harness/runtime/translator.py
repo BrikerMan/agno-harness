@@ -45,6 +45,7 @@ from ag_ui.core import (
     EventType,
     RunErrorEvent,
     RunStartedEvent,
+    TextMessageEndEvent,
 )
 from agno.os.interfaces.agui.handlers import (
     HANDLERS,
@@ -127,6 +128,7 @@ class EventTranslator:
         self._tracer = tracer
         self._completion_chunk: Any = None
         self._accumulated_text: list[str] = []
+        self._model_request_in_flight: bool = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────
 
@@ -206,6 +208,32 @@ class EventTranslator:
         if is_completion_event(chunk):
             self._completion_chunk = chunk
             return
+
+        norm_value = _normalize_event(chunk_event_value(chunk))
+        if norm_value == "ModelRequestStarted":
+            if self._model_request_in_flight:
+                # Previous model stream aborted before ModelRequestCompleted (e.g. primary model
+                # timed out mid-stream and Agno switched to a fallback model). Close any open text
+                # message and signal collectors to discard the aborted stream's output.
+                self._accumulated_text.clear()
+                if self.scope.stream_state.text_message_open:
+                    close_evt = TextMessageEndEvent(
+                        type=EventType.TEXT_MESSAGE_END,
+                        message_id=self.scope.stream_state.text_message_id,
+                    )
+                    self.scope.stream_state.close_text_message()
+                    async for out in self._emit(close_evt):
+                        yield self._traced(out)
+                reset_evt = CustomEvent(
+                    type=EventType.CUSTOM,
+                    name="model.fallback.reset",
+                    value={},
+                )
+                async for out in self._emit(reset_evt):
+                    yield self._traced(out)
+            self._model_request_in_flight = True
+        elif norm_value in ("ModelRequestCompleted", "ToolCallStarted"):
+            self._model_request_in_flight = False
 
         for event in self.convert(chunk, self.scope.stream_state):
             async for out in self._emit(event):

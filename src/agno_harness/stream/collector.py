@@ -156,6 +156,21 @@ class MessageCollector:
         self.cards: list[dict[str, Any]] = []
         self.paused_descriptors: list[dict[str, Any]] = []
         self.run_error: str | None = None
+        self._subagent_depth: int = 0
+        self._model_request_open: bool = False
+        self._request_text_start: int = 0
+        self._request_cards_start: int = 0
+
+    def _discard_aborted_request(self) -> None:
+        """Roll back text and cards from a primary model stream that failed before completing."""
+        if self.keep_interim_text:
+            del self.text_chunks[self._request_text_start :]
+            del self.cards[self._request_cards_start :]
+        else:
+            self.text_chunks.clear()
+            self.cards.clear()
+        self.current_block = None
+        self.rendered_items = []
 
     def feed(self, event: Any) -> None:
         """Feed a single AG-UI event into the collector."""
@@ -165,7 +180,40 @@ class MessageCollector:
             self.run_error = str(getattr(event, "message", "") or "Run error")
             return
 
+        if event_type is EventType.CUSTOM or getattr(event_type, "name", "") == "CUSTOM":
+            name = getattr(event, "name", "")
+            if name == "subagent.start":
+                self._subagent_depth += 1
+                return
+            if name == "subagent.end":
+                self._subagent_depth = max(0, self._subagent_depth - 1)
+                return
+            if name == "model.fallback.reset" and self._subagent_depth == 0:
+                self._discard_aborted_request()
+                self._request_text_start = len(self.text_chunks)
+                self._request_cards_start = len(self.cards)
+                return
+
+        if self._subagent_depth > 0:
+            return
+
+        if event_type is EventType.RAW or getattr(event_type, "name", "") == "RAW":
+            raw = getattr(event, "event", None)
+            raw_kind = raw.get("event") if isinstance(raw, dict) else None
+            if raw_kind in ("ModelRequestStarted", "TeamModelRequestStarted"):
+                if self._model_request_open:
+                    self._discard_aborted_request()
+                elif not self.keep_interim_text:
+                    self.text_chunks.clear()
+                self._model_request_open = True
+                self._request_text_start = len(self.text_chunks)
+                self._request_cards_start = len(self.cards)
+            elif raw_kind in ("ModelRequestCompleted", "TeamModelRequestCompleted"):
+                self._model_request_open = False
+            return
+
         if event_type is EventType.TOOL_CALL_START:
+            self._model_request_open = False
             if not self.keep_interim_text:
                 self.text_chunks.clear()
             return

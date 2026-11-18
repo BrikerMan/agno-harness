@@ -341,3 +341,22 @@ def test_message_collector_renders_hitl_cards():
     assert actions[0]["value"]["action_id"] == "agno.hitl.resume"
     assert actions[0]["value"]["tool_call_id"] == "call_123"
     assert actions[0]["value"]["accepted"] is True
+
+
+@pytest.mark.asyncio
+async def test_mention_prefixed_new_command_resets_session_without_running_agent():
+    runtime = AgentRuntime(agent=FakeAgent([content("should not run"), run_completed()]))
+    app = RelayApp(runtime)
+    cli = CLIChannel(console=Console(record=True))
+    app.add_channel(cli)
+
+    outbound = await app.handle_event(
+        cli,
+        ChannelEvent(
+            event_id="reset-mention-1",
+            key=ConversationKey(platform="cli", chat_id="c1", is_direct_message=True),
+            text="<at>Moradin</at> /new",
+        ),
+    )
+    assert outbound is not None
+    assert "cleared" in outbound.text.lower()
