@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.17
+
+### Fixed
+
+- **History replay keeps header-only stream-ui cards verbatim.** `strip_stream_ui(..., keep_header_cards=True)` (used by the sealed/checkpoint history hook) no longer collapses a card whose body is only its JSON header (e.g. a confirm or task-start card) into a `[schema]` placeholder. Weaker models copied that placeholder as their answer, so the card silently never rendered. Item-row widgets and user-visible stripping are unchanged.
+
 ## 0.3.15
 
 ### Fixed

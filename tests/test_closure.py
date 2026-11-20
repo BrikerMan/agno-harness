@@ -337,6 +337,35 @@ def test_strip_stream_ui():
     assert strip_stream_ui(unclosed) == "Starting card:"
 
 
+def test_strip_stream_ui_keeps_header_cards_for_history():
+    # Stored run content of a real confirm card turn (props trimmed).
+    stored = (
+        "<stream-ui>\n"
+        '{"schema": "draft_confirm", "article_id": "yodo1-636", '
+        '"title": "How IP Collaborations Cut UA Costs for SLG Games", "evidence": ["Top War x Transformers"]}\n'
+        "</stream-ui>\n\n"
+        'Tap **Start writing**, or reply "start".'
+    )
+    visible = strip_stream_ui(stored)
+    assert visible.startswith("[draft_confirm]")
+
+    history = strip_stream_ui(stored, keep_header_cards=True)
+    assert "[draft_confirm]" not in history
+    assert history.startswith("<stream-ui>\n{")
+    header = json.loads(history.split("\n")[1])
+    assert header["schema"] == "draft_confirm"
+    assert header["article_id"] == "yodo1-636"
+    assert history.endswith('Tap **Start writing**, or reply "start".')
+
+    rows = (
+        "<stream-ui>\n"
+        '{"schema": "weather_list"}\n'
+        '{"city": "Paris", "temp": 12}\n'
+        "</stream-ui>"
+    )
+    assert strip_stream_ui(rows, keep_header_cards=True) == "[weather_list]"
+
+
 def test_smart_compression_manager():
     asyncio.run(_async_smart_compression_manager())
 

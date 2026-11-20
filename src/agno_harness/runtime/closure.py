@@ -431,7 +431,18 @@ async def seal_session_run(
     return True
 
 
-def strip_stream_ui(text: str | None) -> str:
+def _header_only_card(body: str) -> dict[str, Any] | None:
+    """The card's whole body is one JSON header naming a schema (no item rows, no text)."""
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return None
+    if isinstance(parsed, dict) and isinstance(parsed.get("schema"), str) and parsed["schema"]:
+        return parsed
+    return None
+
+
+def strip_stream_ui(text: str | None, *, keep_header_cards: bool = False) -> str:
     """Strip <stream-ui> tags and component chrome while preserving textual/artifact bodies.
 
     For document cards (artifacts, presentation decks, code listings, diffs), the inner
@@ -439,9 +450,15 @@ def strip_stream_ui(text: str | None) -> str:
     For structured item widgets (weather, movie lists, etc.), the JSON data rows are stripped
     to keep context compact.
     Unclosed blocks from interrupted runs retain their partial content with an '(interrupted)' note.
+
+    ``keep_header_cards`` is for replaying history to the model: a closed card whose body is
+    only its JSON header stays verbatim, because a ``[schema]`` placeholder there teaches the
+    model to answer with the placeholder instead of the card.
     """
     if not text:
         return ""
+
+    kept: list[str] = []
 
     def _format_block(header_raw: str, body_raw: str, closed: bool) -> str:
         stripped_body = body_raw.strip()
@@ -451,6 +468,12 @@ def strip_stream_ui(text: str | None) -> str:
             or stripped_body.startswith("<stream-ui")
         ):
             return ""
+
+        if keep_header_cards and closed and header_raw.startswith("<stream-ui"):
+            card = _header_only_card(stripped_body)
+            if card is not None:
+                kept.append("<stream-ui>\n" + json.dumps(card, ensure_ascii=False) + "\n</stream-ui>")
+                return f"\n\x00kept-card-{len(kept) - 1}\x00\n"
 
         schema = ""
         title = ""
@@ -521,6 +544,8 @@ def strip_stream_ui(text: str | None) -> str:
     p_fence_unclosed = re.compile(r"(```stream-ui[^\n]*\n)([\s\S]*)$", re.DOTALL)
     res = p_fence_unclosed.sub(lambda m: _format_block(m.group(1), m.group(2), closed=False), res)
 
+    for i, card in enumerate(kept):
+        res = res.replace(f"\x00kept-card-{i}\x00", card)
     return res.strip()
 
 
@@ -632,7 +657,7 @@ def install_sealed_history_hook() -> None:
                 raw_messages = original_get_messages(self, *args, **kwargs)
                 for m in raw_messages:
                     if getattr(m, "role", None) == "assistant" and isinstance(m.content, str):
-                        cleaned = strip_stream_ui(m.content)
+                        cleaned = strip_stream_ui(m.content, keep_header_cards=True)
                         m.content = cleaned if cleaned else "[Rendered UI Component]"
                 return raw_messages
 
@@ -701,7 +726,7 @@ def install_sealed_history_hook() -> None:
                     None,
                 )
                 if final_asst:
-                    cleaned_asst = strip_stream_ui(final_asst.content)
+                    cleaned_asst = strip_stream_ui(final_asst.content, keep_header_cards=True)
                     result_messages.append(
                         Message(
                             role="assistant",
@@ -726,7 +751,7 @@ def install_sealed_history_hook() -> None:
 
                 for m in subsequent_msgs:
                     if getattr(m, "role", None) == "assistant" and isinstance(m.content, str):
-                        cleaned = strip_stream_ui(m.content)
+                        cleaned = strip_stream_ui(m.content, keep_header_cards=True)
                         m.content = cleaned if cleaned else "[Rendered UI Component]"
                 result_messages.extend(subsequent_msgs)
 
